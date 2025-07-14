@@ -3,10 +3,16 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import pandas as pd
+from google.oauth2.service_account import Credentials
+
+
+# Define the scopes
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+# Load credentials from st.secrets
+creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
 
 # Google Sheet Auth
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
 client = gspread.authorize(creds)
 
 # Connect to your Google Sheet
