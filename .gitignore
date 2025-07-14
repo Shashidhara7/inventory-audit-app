@@ -1,0 +1,10 @@
+# Ignore Google service credentials
+gcred.json
+service_account.json
+*.json
+
+# VS Code and system files
+.vscode/
+__pycache__/
+*.pyc
+.DS_Store
