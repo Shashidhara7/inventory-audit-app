@@ -10,13 +10,14 @@ from google.oauth2.service_account import Credentials
 # scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 # Load credentials from st.secrets
-# creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
+creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
+
 
 # Scope for Google Sheets
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 # Load credentials from JSON file
-creds = Credentials.from_service_account_file("service_account.json", scopes=scope)
+#creds = Credentials.from_service_account_file("service_account.json", scopes=scope)
 
 # Google Sheet Auth
 client = gspread.authorize(creds)
