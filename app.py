@@ -7,20 +7,15 @@ from google.oauth2.service_account import Credentials
 
 
 # Define the scopes
-# scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-
-# Load credentials from st.secrets
-creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
-
-
-# Scope for Google Sheets
+# Define scope FIRST
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
-# Load credentials from JSON file
-#creds = Credentials.from_service_account_file("service_account.json", scopes=scope)
-
-# Google Sheet Auth
+# Use secret credentials
+creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
 client = gspread.authorize(creds)
+
+# Open your Google Sheet
+sheet = client.open("YourGoogleSheetName")  # Replace with actual sheet name
 
 # Now you can access your sheet
 sheet = client.open("InventoryStockApp").sheet1
