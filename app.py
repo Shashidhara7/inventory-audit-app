@@ -7,19 +7,31 @@ from google.oauth2.service_account import Credentials
 
 
 # Define the scopes
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+# scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 
 # Load credentials from st.secrets
-creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
+# creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
+
+# Scope for Google Sheets
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+# Load credentials from JSON file
+creds = Credentials.from_service_account_file("service_account.json", scopes=scope)
 
 # Google Sheet Auth
 client = gspread.authorize(creds)
 
+# Now you can access your sheet
+sheet = client.open("InventoryStockApp").sheet1
 # Connect to your Google Sheet
-sheet = client.open("InventoryStockApp")  # <--- Change this name
-raw_sheet = sheet.worksheet("Raw")
-stock_sheet = sheet.worksheet("StockCountDetails")
-login_sheet = sheet.worksheet("LoginDetails")
+# sheet = client.open("InventoryStockApp")  # <--- Change this name
+spreadsheet = client.open("InventoryStockApp")
+
+raw_sheet = client.open("InventoryStockApp").worksheet("Raw")
+stock_sheet = client.open("InventoryStockApp").worksheet("StockCountDetails")
+login_sheet = client.open("InventoryStockApp").worksheet("LoginDetails")
+
+
 
 # Get sheet data
 def get_raw_data():
