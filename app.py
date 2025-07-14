@@ -3,55 +3,37 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
 import pandas as pd
-from google.oauth2.service_account import Credentials
 
-
-# Define the scopes
-# Define scope FIRST
+# Google Sheet Auth
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-
-# Use secret credentials
-creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
+creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
 client = gspread.authorize(creds)
 
-# Open your Google Sheet
-sheet = client.open("YourGoogleSheetName")  # Replace with actual sheet name
+# Sheet references
+sheet = client.open("InventoryStockApp")
+raw_sheet = sheet.worksheet("Raw")
+stock_sheet = sheet.worksheet("StockCountDetails")
+login_sheet = sheet.worksheet("LoginDetails")
 
-# Now you can access your sheet
-sheet = client.open("InventoryStockApp").sheet1
-# Connect to your Google Sheet
-# sheet = client.open("InventoryStockApp")  # <--- Change this name
-spreadsheet = client.open("InventoryStockApp")
-
-raw_sheet = client.open("InventoryStockApp").worksheet("Raw")
-stock_sheet = client.open("InventoryStockApp").worksheet("StockCountDetails")
-login_sheet = client.open("InventoryStockApp").worksheet("LoginDetails")
-
-
-
-# Get sheet data
+# Get dataframes
 def get_raw_data():
-    data = raw_sheet.get_all_values()[1:]  # skip Row 1 (header)
-    return pd.DataFrame(data, columns=["ShelfLabel", "WID", "Vertical", "Brand", "Quantity", "ATP"])
+    return pd.DataFrame(raw_sheet.get_all_records())
 
 def get_stock_data():
-    data = stock_sheet.get_all_values()[1:]  # Skip header row
-    return pd.DataFrame(data, columns=["Date", "ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"])
-
+    return pd.DataFrame(stock_sheet.get_all_records())
 
 def login(username, password):
     now = datetime.now()
     login_sheet.append_row([now.date().isoformat(), username, password, now.strftime("%H:%M:%S")])
     return True
 
-# Login session state
+# Session State for login & ShelfLabel
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
 if "shelf_label" not in st.session_state:
     st.session_state.shelf_label = ""
 
-# Login Page
 if not st.session_state.logged_in:
     st.title("🔐 Login")
 
@@ -62,7 +44,7 @@ if not st.session_state.logged_in:
         login(username, password)
         st.session_state.logged_in = True
         st.session_state.username = username
-        st.success("✅ Login successful!")
+        st.success("Login successful!")
 
 else:
     st.title("📦 Stock Count App")
@@ -136,7 +118,7 @@ else:
                 ])
                 st.success("✅ New WID entry added")
 
-                        # Default counted qty = 1 or from existing row
+            s            # Default counted qty = 1 or from existing row
             if not existing.empty:
                 counted_qty = int(existing.iloc[0]["CountedQty"]) + 1
             else:
