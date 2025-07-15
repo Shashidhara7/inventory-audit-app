@@ -17,6 +17,15 @@ raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
+# Ensure required headers exist in the StockCountDetails sheet
+required_headers = ["Date", "ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
+existing_headers = stock_sheet.row_values(1)
+
+# If headers are missing or the sheet is empty, write headers
+if existing_headers != required_headers:
+    stock_sheet.update("A1:H1", [required_headers])
+
+
 # Get dataframes
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
