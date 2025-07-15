@@ -25,9 +25,19 @@ def get_stock_data():
     return pd.DataFrame(stock_sheet.get_all_records())
 
 def login(username, password):
-    now = datetime.now()
-    login_sheet.append_row([now.date().isoformat(), username, password, now.strftime("%H:%M:%S")])
-    return True
+    login_df = pd.DataFrame(login_sheet.get_all_records())
+
+    # Check if user exists and password matches
+    user_record = login_df[login_df["Username"] == username]
+
+    if not user_record.empty and user_record.iloc[0]["Password"] == password:
+        now = datetime.now()
+        # Optional: Log successful login time in the sheet
+        # login_sheet.append_row([now.date().isoformat(), username, "Login", now.strftime("%H:%M:%S")])
+        return True
+    else:
+        return False
+
 
 # Session State for login & ShelfLabel
 if "logged_in" not in st.session_state:
@@ -43,10 +53,12 @@ if not st.session_state.logged_in:
     password = st.text_input("Password", type="password")
 
     if st.button("Login"):
-        login(username, password)
-        st.session_state.logged_in = True
-        st.session_state.username = username
-        st.success("Login successful!")
+        if login(username, password):
+            st.session_state.logged_in = True
+            st.session_state.username = username
+            st.success("✅ Login successful!")
+        else:
+            st.error("❌ Invalid username or password")
 
 else:
     st.title("📦 Stock Count App")
