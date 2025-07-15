@@ -84,7 +84,7 @@ else:
     if wid:
         raw_df = get_raw_data()
 
-        # Match shelf + wid
+        # Match shelf + WID
         matching = raw_df[
             (raw_df["ShelfLabel"] == st.session_state.shelf_label) &
             (raw_df["WID"] == wid)
@@ -95,10 +95,9 @@ else:
             brand = matching.iloc[0]["Brand"]
             available_qty = int(matching.iloc[0]["Quantity"])
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            stock_df = get_stock_data()
             today = datetime.now().date().isoformat()
 
+            stock_df = get_stock_data()
             existing = stock_df[
                 (stock_df["Date"] == today) &
                 (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
@@ -118,43 +117,40 @@ else:
                 st.success("✅ WID already counted — quantity updated")
             else:
                 counted_qty = 1
-                if counted_qty < available_qty:
-                    status = "Short"
-                elif counted_qty > available_qty:
-                    status = "Excess"
-                else:
-                    status = "OK"
-
                 stock_sheet.append_row([
                     today,
                     st.session_state.shelf_label,
                     wid,
                     counted_qty,
                     available_qty,
-                    status,
+                    "",  # Status will be calculated below
                     timestamp,
                     st.session_state.username
                 ])
                 st.success("✅ New WID entry added")
 
-                        # Default counted qty = 1 or from existing row
-            if not existing.empty:
-                counted_qty = int(existing.iloc[0]["CountedQty"]) + 1
-            else:
-                counted_qty = 0
-
-            # Calculate status
+            # Recalculate status AFTER update or insert
             if counted_qty < available_qty:
                 status = "Short"
                 required_qty = available_qty - counted_qty
+                status_color = "red"
             elif counted_qty > available_qty:
                 status = "Excess"
-                required_qty = available_qty - counted_qty
+                required_qty = counted_qty - available_qty
+                status_color = "orange"
             else:
                 status = "OK"
                 required_qty = 0
+                status_color = "green"
 
-            # Show status block
+            # Update status in the sheet
+            if not existing.empty:
+                stock_sheet.update_cell(idx + 2, 6, status)
+            else:
+                # Just updated on append_row — already stored
+                pass
+
+            # Show status visually
             st.markdown(f"""
             ### 🧾 Scan Result
             - **Brand**: `{brand}`
@@ -162,5 +158,7 @@ else:
             - **Available Qty**: `{available_qty}`
             - **Counted Qty**: `{counted_qty}`
             - **Required Qty**: `{required_qty}`
-            - **Status**: :{"green" if status == "OK" else "red"}[**{status}**]
+            - **Status**: :{status_color}[**{status}**]
             """)
+        else:
+            st.warning("⚠️ This WID is not found in the selected shelf in Raw data.")
