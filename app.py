@@ -31,7 +31,10 @@ def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
 
 def get_stock_data():
-    return pd.DataFrame(stock_sheet.get_all_records())
+    data = stock_sheet.get_all_values()
+    if not data or len(data) < 2:
+        return pd.DataFrame(columns=["ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"])
+    return pd.DataFrame(data[1:], columns=data[0])  # Uses first row as headers
 
 def login(username, password):
     login_df = pd.DataFrame(login_sheet.get_all_records())
