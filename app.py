@@ -21,6 +21,8 @@ login_sheet = sheet.worksheet("LoginDetails")
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
 
+
+
 def get_stock_data():
     stock_df = pd.DataFrame(stock_sheet.get_all_records())
 
@@ -28,7 +30,9 @@ def get_stock_data():
         "Date", "ShelfLabel", "WID", "CountedQty",
         "AvailableQty", "Status", "Timestamp", "CasperID"
     ]
-
+    stock_df = get_stock_data()
+    st.write("StockCountDetails headers:", stock_df.columns.tolist())
+    
     missing_cols = [col for col in expected_cols if col not in stock_df.columns]
 
     if missing_cols:
