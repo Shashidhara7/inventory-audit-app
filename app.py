@@ -21,26 +21,12 @@ login_sheet = sheet.worksheet("LoginDetails")
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
 
-
-
 def get_stock_data():
-    stock_df = pd.DataFrame(stock_sheet.get_all_records())
+    records = stock_sheet.get_all_records()
+    return pd.DataFrame(records)
 
-    expected_cols = [
-        "Date", "ShelfLabel", "WID", "CountedQty",
-        "AvailableQty", "Status", "Timestamp", "CasperID"
-    ]
-    stock_df = get_stock_data()
-    st.write("StockCountDetails headers:", stock_df.columns.tolist())
-    
-    missing_cols = [col for col in expected_cols if col not in stock_df.columns]
-
-    if missing_cols:
-        st.error(f"⚠️ The following required columns are missing from 'StockCountDetails' sheet: {', '.join(missing_cols)}.\n\nPlease correct the sheet headers before proceeding.")
-        st.stop()
-
-    return stock_df
-
+stock_df = get_stock_data()
+st.write("Headers from StockCountDetails:", stock_df.columns.tolist())
 
 def login(username, password):
     login_df = pd.DataFrame(login_sheet.get_all_records())
