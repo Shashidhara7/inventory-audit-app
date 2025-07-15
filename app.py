@@ -1,12 +1,16 @@
 import streamlit as st
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 from datetime import datetime
 import pandas as pd
 
 # Google Sheet Auth
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+scope = ["https://spreadsheets.google.com/feeds",
+         "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+        "https://www.googleapis.com/auth/drive.file"]
+creds = Credentials.from_service_account_file("Credential.json", scopes=scope)
 client = gspread.authorize(creds)
 
 # Sheet references
@@ -118,11 +122,11 @@ else:
                 ])
                 st.success("✅ New WID entry added")
 
-            s            # Default counted qty = 1 or from existing row
+                        # Default counted qty = 1 or from existing row
             if not existing.empty:
                 counted_qty = int(existing.iloc[0]["CountedQty"]) + 1
             else:
-                counted_qty = 1
+                counted_qty = 0
 
             # Calculate status
             if counted_qty < available_qty:
@@ -130,7 +134,7 @@ else:
                 required_qty = available_qty - counted_qty
             elif counted_qty > available_qty:
                 status = "Excess"
-                required_qty = counted_qty - available_qty
+                required_qty = available_qty - counted_qty
             else:
                 status = "OK"
                 required_qty = 0
