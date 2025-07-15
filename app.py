@@ -7,10 +7,8 @@ import pandas as pd
 
 # Google Sheet Auth
 scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-        "https://www.googleapis.com/auth/drive.file"]
-creds = Credentials.from_service_account_file("Credential.json", scopes=scope)
+        "https://www.googleapis.com/auth/drive"]
+creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
 client = gspread.authorize(creds)
 
 # Sheet references

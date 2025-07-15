@@ -1,7 +1,7 @@
 import json
 
 # Load your downloaded Google service account key file
-with open("service_account.json") as f:
+with open("Credential.json") as f:
     data = json.load(f)
 
 # Format private key for TOML
