@@ -17,16 +17,17 @@ raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# Ensure required headers
-required_headers = ["Date", "ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
-existing_headers = stock_sheet.row_values(1)
+# Define get_raw_data before it's used
+def get_raw_data():
+    return pd.DataFrame(raw_sheet.get_all_records())
 
-# If headers are missing or wrong, fix them
-if existing_headers != required_headers:
-    stock_sheet.update("A1:H1", [required_headers])
-
-# Now load fresh data safely
 def get_stock_data():
+    # Ensure headers first (as done earlier)
+    required_headers = ["Date", "ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
+    existing_headers = stock_sheet.row_values(1)
+    if existing_headers != required_headers:
+        stock_sheet.update("A1:H1", [required_headers])
+
     records = stock_sheet.get_all_records()
     return pd.DataFrame(records)
 
