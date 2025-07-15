@@ -57,6 +57,7 @@ if not st.session_state.logged_in:
             st.session_state.logged_in = True
             st.session_state.username = username
             st.success("✅ Login successful!")
+            st.rerun()  # 🔁 Force app to rerun and render next screen immediately
         else:
             st.error("❌ Invalid username or password")
 
