@@ -5,9 +5,7 @@ from datetime import datetime
 import pandas as pd
 
 # Google Sheet Auth
-scope = ["https://spreadsheets.google.com/feeds",
-         "https://www.googleapis.com/auth/drive"]
-
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
 client = gspread.authorize(creds)
 
@@ -17,46 +15,39 @@ raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# Define get_raw_data before it's used
+# ✅ Ensure StockCountDetails has required headers
+expected_headers = ["Date", "ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
+actual_headers = stock_sheet.row_values(1)
+if actual_headers != expected_headers:
+    stock_sheet.update("A1:H1", [expected_headers])
+    st.warning("⚠️ 'StockCountDetails' headers were missing or incorrect. They have been reset.")
+
+# Data functions
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
 
 def get_stock_data():
-    # Ensure headers first (as done earlier)
-    required_headers = ["Date", "ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
-    existing_headers = stock_sheet.row_values(1)
-    if existing_headers != required_headers:
-        stock_sheet.update("A1:H1", [required_headers])
-
-    records = stock_sheet.get_all_records()
-    return pd.DataFrame(records)
-
-stock_df = get_stock_data()
-
-# Optional: debug
-st.write("✅ Headers in sheet:", stock_df.columns.tolist())
-
+    return pd.DataFrame(stock_sheet.get_all_records())
 
 def login(username, password):
     login_df = pd.DataFrame(login_sheet.get_all_records())
-    if "Username" in login_df.columns and "Password" in login_df.columns:
-        user_record = login_df[login_df["Username"] == username]
-        if not user_record.empty and user_record.iloc[0]["Password"] == password:
-            return True
+    user_record = login_df[login_df["Username"] == username]
+    if not user_record.empty and user_record.iloc[0]["Password"] == password:
+        return True
     return False
 
-# Session State for login & ShelfLabel
+# Session state
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
+
 if "shelf_label" not in st.session_state:
     st.session_state.shelf_label = ""
 
-# 🔐 Login Page
+# Login page
 if not st.session_state.logged_in:
     st.title("🔐 Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-
     if st.button("Login"):
         if login(username, password):
             st.session_state.logged_in = True
@@ -66,12 +57,10 @@ if not st.session_state.logged_in:
         else:
             st.error("❌ Invalid username or password")
 
-# 📦 Main App Page
+# Main app
 else:
-    # Inside the "logged in" block
     st.title("📦 Stock Count App")
 
-    # Check or set ShelfLabel
     if not st.session_state.shelf_label:
         new_shelf = st.text_input("Scan or Enter NEW Shelf Label")
         if new_shelf:
@@ -82,39 +71,31 @@ else:
         if st.button("🔁 Change Shelf Label"):
             st.session_state.shelf_label = ""
 
-    # ✅ Input for WID must be here before "if wid"
     wid = st.text_input("Scan or Enter WID to count", key="wid_input")
 
-    # ✅ This comes after the above input
     if wid:
         raw_df = get_raw_data()
-        ...
-
-        match = raw_df[
+        matching = raw_df[
             (raw_df["ShelfLabel"] == st.session_state.shelf_label) &
             (raw_df["WID"] == wid)
         ]
 
-        if not match.empty:
-            vertical = match.iloc[0]["Vertical"]
-            brand = match.iloc[0]["Brand"]
-            available_qty = int(match.iloc[0]["Quantity"])
+        if not matching.empty:
+            brand = matching.iloc[0]["Brand"]
+            vertical = matching.iloc[0]["Vertical"]
+            available_qty = int(matching.iloc[0]["Quantity"])
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             today = datetime.now().date().isoformat()
 
+            stock_df = get_stock_data()
             existing = stock_df[
-                    (stock_df["Date"] == today) &
-                    (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
-                    (stock_df["WID"] == wid)
-                ]
-
+                (stock_df["Date"] == today) &
+                (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
+                (stock_df["WID"] == wid)
+            ]
 
             if not existing.empty:
-                idx = stock_df[
-                    (stock_df["Date"] == today) &
-                    (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
-                    (stock_df["WID"] == wid)
-                ].index[0]
+                idx = existing.index[0]
                 counted_qty = int(existing.iloc[0]["CountedQty"]) + 1
                 stock_sheet.update_cell(idx + 2, 4, counted_qty)
                 stock_sheet.update_cell(idx + 2, 7, timestamp)
@@ -127,26 +108,27 @@ else:
                     wid,
                     counted_qty,
                     available_qty,
-                    "",  # Status to be updated below
+                    "",  # Status will be calculated below
                     timestamp,
                     st.session_state.username
                 ])
                 st.success("✅ New WID entry added")
 
-            # Recalculate status
+            # Calculate status
             if counted_qty < available_qty:
                 status = "Short"
                 required_qty = available_qty - counted_qty
-                color = "red"
+                status_color = "red"
             elif counted_qty > available_qty:
                 status = "Excess"
                 required_qty = counted_qty - available_qty
-                color = "orange"
+                status_color = "orange"
             else:
                 status = "OK"
                 required_qty = 0
-                color = "green"
+                status_color = "green"
 
+            # Show result
             st.markdown(f"""
             ### 🧾 Scan Result
             - **Brand**: `{brand}`
@@ -154,8 +136,8 @@ else:
             - **Available Qty**: `{available_qty}`
             - **Counted Qty**: `{counted_qty}`
             - **Required Qty**: `{required_qty}`
-            - **Status**: :{color}[**{status}**]
+            - **Status**: :{status_color}[**{status}**]
             """)
 
         else:
-            st.error("❌ WID not found for the current Shelf Label")
+            st.error("❌ WID not found for this shelf.")
