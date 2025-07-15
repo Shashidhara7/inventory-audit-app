@@ -17,22 +17,24 @@ raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# Ensure required headers exist in the StockCountDetails sheet
+# Ensure required headers
 required_headers = ["Date", "ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
 existing_headers = stock_sheet.row_values(1)
 
-# If headers are missing or the sheet is empty, write headers
+# If headers are missing or wrong, fix them
 if existing_headers != required_headers:
     stock_sheet.update("A1:H1", [required_headers])
 
-
-# Get dataframes
-def get_raw_data():
-    return pd.DataFrame(raw_sheet.get_all_records())
-
+# Now load fresh data safely
 def get_stock_data():
     records = stock_sheet.get_all_records()
     return pd.DataFrame(records)
+
+stock_df = get_stock_data()
+
+# Optional: debug
+st.write("✅ Headers in sheet:", stock_df.columns.tolist())
+
 
 def login(username, password):
     login_df = pd.DataFrame(login_sheet.get_all_records())
@@ -97,10 +99,11 @@ else:
             today = datetime.now().date().isoformat()
 
             existing = stock_df[
-                (stock_df.get("Date") == today) &
-                (stock_df.get("ShelfLabel") == st.session_state.shelf_label) &
-                (stock_df.get("WID") == wid)
-            ]
+                    (stock_df["Date"] == today) &
+                    (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
+                    (stock_df["WID"] == wid)
+                ]
+
 
             if not existing.empty:
                 idx = stock_df[
