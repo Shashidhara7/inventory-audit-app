@@ -68,11 +68,10 @@ if not st.session_state.logged_in:
 
 # 📦 Main App Page
 else:
+    # Inside the "logged in" block
     st.title("📦 Stock Count App")
 
-    # Load stock data once
-    stock_df = get_stock_data()
-
+    # Check or set ShelfLabel
     if not st.session_state.shelf_label:
         new_shelf = st.text_input("Scan or Enter NEW Shelf Label")
         if new_shelf:
@@ -83,10 +82,14 @@ else:
         if st.button("🔁 Change Shelf Label"):
             st.session_state.shelf_label = ""
 
+    # ✅ Input for WID must be here before "if wid"
     wid = st.text_input("Scan or Enter WID to count", key="wid_input")
 
+    # ✅ This comes after the above input
     if wid:
         raw_df = get_raw_data()
+        ...
+
         match = raw_df[
             (raw_df["ShelfLabel"] == st.session_state.shelf_label) &
             (raw_df["WID"] == wid)
