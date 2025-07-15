@@ -15,11 +15,11 @@ raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# ✅ Ensure StockCountDetails has required headers
-expected_headers = ["Date", "ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
+# ✅ Ensure StockCountDetails has correct headers (without Date)
+expected_headers = ["ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
 actual_headers = stock_sheet.row_values(1)
 if actual_headers != expected_headers:
-    stock_sheet.update("A1:H1", [expected_headers])
+    stock_sheet.update("A1:G1", [expected_headers])
     st.warning("⚠️ 'StockCountDetails' headers were missing or incorrect. They have been reset.")
 
 # Data functions
@@ -85,11 +85,9 @@ else:
             vertical = matching.iloc[0]["Vertical"]
             available_qty = int(matching.iloc[0]["Quantity"])
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            today = datetime.now().date().isoformat()
 
             stock_df = get_stock_data()
             existing = stock_df[
-                (stock_df["Date"] == today) &
                 (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
                 (stock_df["WID"] == wid)
             ]
@@ -97,18 +95,17 @@ else:
             if not existing.empty:
                 idx = existing.index[0]
                 counted_qty = int(existing.iloc[0]["CountedQty"]) + 1
-                stock_sheet.update_cell(idx + 2, 4, counted_qty)
-                stock_sheet.update_cell(idx + 2, 7, timestamp)
+                stock_sheet.update_cell(idx + 2, 3, counted_qty)
+                stock_sheet.update_cell(idx + 2, 6, timestamp)
                 st.success("✅ WID already counted — quantity updated")
             else:
                 counted_qty = 1
                 stock_sheet.append_row([
-                    today,
                     st.session_state.shelf_label,
                     wid,
                     counted_qty,
                     available_qty,
-                    "",  # Status will be calculated below
+                    "",  # Status will be calculated and shown
                     timestamp,
                     st.session_state.username
                 ])
