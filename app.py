@@ -1,129 +1,127 @@
 import streamlit as st
-from datetime import datetime
 import pandas as pd
+import datetime
 import gspread
-from google.oauth2.service_account import Credentials
+from oauth2client.service_account import ServiceAccountCredentials
 
-# Set page config
-st.set_page_config(page_title="Inventory Audit", layout="wide")
-
-# Google Sheets authentication
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
+# Google Sheets setup
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/drive"]
+creds = ServiceAccountCredentials.from_json_keyfile_name("gcreds.json", scope)
 client = gspread.authorize(creds)
 
-# Open Google Sheet
-sheet = client.open("InventoryStockApp")
-raw_ws = sheet.worksheet("Raw")
-stock_ws = sheet.worksheet("StockCountDetails")
-login_ws = sheet.worksheet("LoginDetails")
+# Sheet references
+login_sheet = client.open("InventoryStockApp").worksheet("LoginDetails")
+stock_sheet = client.open("InventoryStockApp").worksheet("StockCountDetails")
+raw_sheet = client.open("InventoryStockApp").worksheet("Raw")
 
-# Load Raw and LoginDetails data
-raw_df = pd.DataFrame(raw_ws.get_all_records())
-login_df = pd.DataFrame(login_ws.get_all_records())
-stock_df = pd.DataFrame(stock_ws.get_all_records())
+# Helper functions
+def authenticate(username, password):
+    users = login_sheet.get_all_records()
+    for user in users:
+        if user["Username"] == username and user["Password"] == password:
+            return True
+    return False
 
-# Session State
+def register_user(username, password):
+    login_sheet.append_row([datetime.date.today().isoformat(), username, password, datetime.datetime.now().isoformat()])
+
+def get_raw_data():
+    return pd.DataFrame(raw_sheet.get_all_records())
+
+def get_stock_data():
+    data = stock_sheet.get_all_records()
+    df = pd.DataFrame(data)
+    return df
+
+def update_stock_count(date, shelf, wid, counted_qty, available_qty, vertical, status, casper_id):
+    stock_df = get_stock_data()
+    existing = stock_df[(stock_df["ShelfLabel"] == shelf) & (stock_df["WID"] == wid)]
+    timestamp = datetime.datetime.now().isoformat()
+
+    if not existing.empty:
+        index = existing.index[0] + 2  # offset for header
+        stock_sheet.update(f"C{index}:I{index}", [[wid, counted_qty, available_qty, vertical, status, timestamp, casper_id]])
+    else:
+        stock_sheet.append_row([date, shelf, wid, counted_qty, available_qty, vertical, status, timestamp, casper_id])
+
+def get_status(counted, available):
+    if counted > available:
+        return "Excess"
+    elif counted < available:
+        return "Short"
+    else:
+        return "OK"
+
+def get_color(status):
+    if status == "Excess":
+        return "#fff3cd"  # yellow
+    elif status == "Short":
+        return "#f8d7da"  # red
+    elif status == "Location Mismatch":
+        return "#d1c4e9"  # purple
+    else:
+        return "#d4edda"  # green
+
+# Session state for login
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "username" not in st.session_state:
     st.session_state.username = ""
 
-# Sidebar Navigation
-page = st.sidebar.radio("Navigate", ["Login", "Register New User"] if not st.session_state.logged_in else ["Stock Count", "Logout"])
+# Sidebar navigation
+st.sidebar.title("Inventory App")
+page = st.sidebar.radio("Navigation", ["Login", "Register New User", "Stock Count Details"])
 
-# ---------------- LOGIN PAGE ----------------
 if page == "Login":
-    st.title("🔐 Login")
+    st.title("Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        match = login_df[(login_df["Username"] == username) & (login_df["Password"] == password)]
-        if not match.empty:
+        if authenticate(username, password):
             st.session_state.logged_in = True
             st.session_state.username = username
-            row_idx = match.index[0] + 2  # +2 accounts for 0-index and header
-            login_ws.update_cell(row_idx, 3, datetime.now().strftime("%H:%M:%S"))  # Update Time
-            st.success("Login successful")
-            st.rerun()
+            st.success("Login successful!")
         else:
             st.error("Invalid credentials")
 
-# ---------------- REGISTER PAGE ----------------
 elif page == "Register New User":
-    st.title("📝 Register New User")
+    st.title("Register")
     new_user = st.text_input("New Username")
     new_pass = st.text_input("New Password", type="password")
     if st.button("Register"):
-        if new_user and new_pass:
-            login_ws.append_row([new_user, new_pass, datetime.now().strftime("%H:%M:%S")])
-            st.success("User registered successfully")
-        else:
-            st.error("Username and Password required")
+        register_user(new_user, new_pass)
+        st.success("User registered!")
 
-# ---------------- STOCK COUNT PAGE ----------------
-elif page == "Stock Count" and st.session_state.logged_in:
-    st.title("📦 Inventory Stock Count")
+elif page == "Stock Count Details":
+    if not st.session_state.logged_in:
+        st.warning("Please login first.")
+    else:
+        st.title("Stock Count Details")
+        shelf = st.text_input("Scan Shelf Label")
+        wid = st.text_input("Scan WID")
 
-    shelf = st.text_input("Enter Shelf Label")
-    wid = st.text_input("Scan or Enter WID")
-    counted_qty = st.number_input("Enter Counted Quantity", step=1, min_value=0)
-
-    if st.button("Submit Count"):
         if shelf and wid:
-            today = datetime.now().strftime("%Y-%m-%d")
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            user = st.session_state.username
+            raw_df = get_raw_data()
+            match = raw_df[(raw_df["ShelfLabel"] == shelf) & (raw_df["WID"] == wid)]
+            if not match.empty:
+                vertical = match.iloc[0]["Vertical"]
+                brand = match.iloc[0]["Brand"]
+                available_qty = int(match.iloc[0]["Quantity"])
+                st.write(f"**Vertical:** {vertical}")
+                st.write(f"**Brand:** {brand}")
+                st.write(f"**Available Qty:** {available_qty}")
 
-            match_raw = raw_df[(raw_df["ShelfLabel"] == shelf) & (raw_df["WID"] == wid)]
-
-            if not match_raw.empty:
-                available_qty = int(match_raw["Quantity"].values[0])
-                vertical = match_raw["Vertical"].values[0]
-
-                if counted_qty > available_qty:
-                    status = "Excess"
-                    color = "background-color: yellow"
-                elif counted_qty < available_qty:
-                    status = "Short"
-                    color = "background-color: red"
-                else:
-                    status = "OK"
-                    color = "background-color: lightgreen"
+                counted_qty = st.number_input("Enter Counted Quantity", min_value=0, step=1)
+                if st.button("Submit Count"):
+                    status = get_status(counted_qty, available_qty)
+                    update_stock_count(datetime.date.today().isoformat(), shelf, wid, counted_qty, available_qty, vertical, status, datetime.datetime.now().isoformat(), st.session_state.username)
+                    st.success(f"Stock count updated. Status: {status}")
             else:
-                available_qty = ""
-                vertical = ""
-                status = "Mismatch"
-                color = "background-color: violet"
+                st.error("WID not found in this shelf or mismatch")
 
-            # Check if WID already scanned
-            existing = stock_df[(stock_df["ShelfLabel"] == shelf) & (stock_df["WID"] == wid)]
-            if not existing.empty:
-                idx = existing.index[0] + 2  # Header offset
-                stock_ws.update(f"C{idx}:I{idx}", [[shelf, wid, counted_qty, available_qty, vertical, status, timestamp, user]])
-                st.success("Updated existing entry")
-            else:
-                stock_ws.append_row([shelf, wid, counted_qty, available_qty, vertical, status, timestamp, user])
-                st.success("Recorded new count")
-
-            # Show styled table
-            updated_df = pd.DataFrame(stock_ws.get_all_records())
-            def highlight_status(val):
-                if val == "Excess":
-                    return "background-color: yellow"
-                elif val == "Short":
-                    return "background-color: red"
-                elif val == "OK":
-                    return "background-color: lightgreen"
-                elif val == "Mismatch":
-                    return "background-color: violet"
-                return ""
-
-            styled = updated_df.style.applymap(highlight_status, subset=["Status"])
-            st.dataframe(styled, use_container_width=True)
-
-# ---------------- LOGOUT ----------------
-elif page == "Logout":
-    st.session_state.logged_in = False
-    st.session_state.username = ""
-    st.rerun()
+        # Display data table with color-coded status
+        stock_df = get_stock_data()
+        if not stock_df.empty:
+            def highlight_row(row):
+                return [f"background-color: {get_color(row['Status'])}" for _ in row]
+            st.dataframe(stock_df.style.apply(highlight_row, axis=1))
