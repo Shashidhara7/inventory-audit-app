@@ -9,7 +9,7 @@ import pytz
 scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
 client = gspread.authorize(creds)
-sheet = client.open("InventoryDB")  # Ensure spreadsheet name is correct
+sheet = client.open("InventoryStockApp")  # Ensure spreadsheet name is correct
 
 # --- Sheet References ---
 raw_sheet = sheet.worksheet("Raw")
