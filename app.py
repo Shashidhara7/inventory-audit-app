@@ -4,137 +4,185 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import pandas as pd
 
-# 🔐 Google Sheet Authentication
+# Google Sheet Auth
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-if "GOOGLE_CREDS" not in st.secrets:
-    st.error("Missing Google credentials in secrets.")
-    st.stop()
-
 creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
 client = gspread.authorize(creds)
 
-# 📄 Sheet references
+# Sheet references
 sheet = client.open("InventoryStockApp")
 raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# ✅ Validate headers in StockCountDetails
+# Ensure headers
 expected_headers = ["ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
 actual_headers = stock_sheet.row_values(1)
-if set(actual_headers) != set(expected_headers):
+if actual_headers != expected_headers:
     stock_sheet.update("A1:G1", [expected_headers])
-    st.warning("⚠️ Sheet headers were auto-corrected.")
+    st.warning("⚠️ 'StockCountDetails' headers were missing or incorrect. They have been reset.")
 
-# 🧠 Data Loaders
+# Functions
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
 
 def get_stock_data():
-    data = stock_sheet.get_all_values()
-    if not data or len(data) < 2:
-        return pd.DataFrame(columns=expected_headers)
-    return pd.DataFrame(data[1:], columns=data[0])  # Skip header row and set headers
+    return pd.DataFrame(stock_sheet.get_all_records())
 
 def login(username, password):
     login_df = pd.DataFrame(login_sheet.get_all_records())
     user_record = login_df[login_df["Username"] == username]
-    return not user_record.empty and user_record.iloc[0]["Password"] == password
+    if not user_record.empty and user_record.iloc[0]["Password"] == password:
+        return True
+    return False
 
-# 🔄 Session State
-st.session_state.setdefault("logged_in", False)
-st.session_state.setdefault("shelf_label", "")
+# Session state
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
 
-# 🔐 Login Interface
-if not st.session_state.logged_in:
+if "shelf_label" not in st.session_state:
+    st.session_state.shelf_label = ""
+
+if "show_register" not in st.session_state:
+    st.session_state.show_register = False
+
+# 🔐 LOGIN / REGISTER PAGE
+if not st.session_state.logged_in and not st.session_state.show_register:
     st.title("🔐 Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        if login(username.strip(), password.strip()):
+        if login(username, password):
             st.session_state.logged_in = True
-            st.session_state.username = username.strip()
+            st.session_state.username = username
             st.success("✅ Login successful!")
             st.rerun()
         else:
             st.error("❌ Invalid username or password")
 
-# 📦 Main App
-else:
+    st.markdown("---")
+    if st.button("🆕 New User? Register here"):
+        st.session_state.show_register = True
+        st.rerun()
+
+# 📝 NEW USER REGISTRATION
+elif st.session_state.show_register:
+    st.title("📝 Register New User")
+    new_username = st.text_input("Create Username")
+    new_password = st.text_input("Create Password", type="password")
+
+    if st.button("✅ Register"):
+        login_df = pd.DataFrame(login_sheet.get_all_records())
+        if new_username.strip() == "" or new_password.strip() == "":
+            st.warning("⚠️ Please fill both fields.")
+        elif new_username in login_df["Username"].values:
+            st.error("❌ Username already exists. Try a different one.")
+        else:
+            login_sheet.append_row([new_username, new_password])
+            st.success("🎉 Registration successful! Please log in.")
+            st.session_state.show_register = False
+            st.rerun()
+
+    if st.button("🔙 Back to Login"):
+        st.session_state.show_register = False
+        st.rerun()
+
+# 📦 MAIN STOCK COUNT APP
+elif st.session_state.logged_in:
     st.title("📦 Stock Count App")
+
+    raw_df = get_raw_data()
+    stock_df = get_stock_data()
 
     if not st.session_state.shelf_label:
         new_shelf = st.text_input("Scan or Enter NEW Shelf Label")
         if new_shelf:
-            st.session_state.shelf_label = new_shelf.strip()
-            st.success(f"Shelf Label set to: {st.session_state.shelf_label}")
+            st.session_state.shelf_label = new_shelf
+            st.success(f"Shelf Label set to: {new_shelf}")
+            st.rerun()
     else:
         st.info(f"📌 Active Shelf Label: `{st.session_state.shelf_label}`")
         if st.button("🔁 Change Shelf Label"):
             st.session_state.shelf_label = ""
+            st.rerun()
 
-    wid = st.text_input("Scan or Enter WID to count", key="wid_input").strip()
+        # Filter WIDs for this shelf
+        shelf_wids = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
+        counted_wids = stock_df[stock_df["ShelfLabel"] == st.session_state.shelf_label]["WID"].tolist()
+        remaining_wids = shelf_wids[~shelf_wids["WID"].isin(counted_wids)]
 
-    if wid:
-        raw_df = get_raw_data()
-        matching = raw_df[
-            (raw_df["ShelfLabel"].str.strip() == st.session_state.shelf_label) &
-            (raw_df["WID"].astype(str).str.strip() == wid)
-        ]
-
-        if not matching.empty:
-            brand = matching.iloc[0]["Brand"]
-            vertical = matching.iloc[0]["Vertical"]
-            available_qty = int(matching.iloc[0]["Quantity"])
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            stock_df = get_stock_data()
-            existing = stock_df[
-                (stock_df["ShelfLabel"].str.strip() == st.session_state.shelf_label) &
-                (stock_df["WID"].astype(str).str.strip() == wid)
-            ]
-
-            if not existing.empty:
-                row_number = existing.index[0] + 2  # Account for header
-                counted_qty = int(existing.iloc[0]["CountedQty"]) + 1
-            else:
-                counted_qty = 1
-
-            # 🔍 Status Calculation
-            if counted_qty < available_qty:
-                status, required_qty, status_color = "Short", available_qty - counted_qty, "red"
-            elif counted_qty > available_qty:
-                status, required_qty, status_color = "Excess", counted_qty - available_qty, "orange"
-            else:
-                status, required_qty, status_color = "OK", 0, "green"
-
-            # 🔄 Save to Google Sheet
-            if not existing.empty:
-                stock_sheet.update_cell(row_number, 3, counted_qty)  # CountedQty
-                stock_sheet.update_cell(row_number, 5, status)       # Status
-                stock_sheet.update_cell(row_number, 6, timestamp)    # Timestamp
-                st.success("✅ WID already counted — quantity updated")
-            else:
-                stock_sheet.append_row([
-                    st.session_state.shelf_label,
-                    wid,
-                    counted_qty,
-                    available_qty,
-                    status,
-                    timestamp,
-                    st.session_state.username
-                ])
-                st.success("✅ New WID entry added")
-
-            # 🧾 Display Results
-            st.markdown(f"""
-            ### 🧾 Scan Result
-            - **Brand**: `{brand}`
-            - **Vertical**: `{vertical}`
-            - **Available Qty**: `{available_qty}`
-            - **Counted Qty**: `{counted_qty}`
-            - **Required Qty**: `{required_qty}`
-            - **Status**: :{status_color}[**{status}**]
-            """)
+        if remaining_wids.empty:
+            st.success("🎉 All WIDs counted for this shelf!")
         else:
-            st.error("❌ WID not found for this shelf.")
+            wid = st.selectbox("Select WID to count", remaining_wids["WID"].tolist())
+
+            if wid:
+                match = raw_df[
+                    (raw_df["ShelfLabel"] == st.session_state.shelf_label) &
+                    (raw_df["WID"] == wid)
+                ].iloc[0]
+
+                brand = match["Brand"]
+                vertical = match["Vertical"]
+                available_qty = int(match["Quantity"])
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                # Check if already counted
+                existing = stock_df[
+                    (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
+                    (stock_df["WID"] == wid)
+                ]
+                if not existing.empty:
+                    current_count = int(existing.iloc[0]["CountedQty"])
+                    idx = existing.index[0] + 2
+                else:
+                    current_count = 0
+                    idx = None
+
+                st.markdown(f"""
+                ### 📋 WID Details
+                - **Brand**: `{brand}`
+                - **Vertical**: `{vertical}`
+                - **Available Qty**: `{available_qty}`
+                - **Current Counted Qty**: `{current_count}`
+                """)
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    if st.button("➕ Scan / Add 1"):
+                        counted_qty = current_count + 1
+                        if idx:
+                            stock_sheet.update_cell(idx, 3, counted_qty)
+                            stock_sheet.update_cell(idx, 6, timestamp)
+                        else:
+                            stock_sheet.append_row([
+                                st.session_state.shelf_label,
+                                wid,
+                                counted_qty,
+                                available_qty,
+                                "",
+                                timestamp,
+                                st.session_state.username
+                            ])
+                        st.success(f"✅ WID {wid} counted. Updated Qty: {counted_qty}")
+                        st.rerun()
+
+                with col2:
+                    manual_qty = st.number_input("✍️ Enter manual count", min_value=0, step=1)
+                    if st.button("✅ Submit Manual Qty"):
+                        if idx:
+                            stock_sheet.update_cell(idx, 3, manual_qty)
+                            stock_sheet.update_cell(idx, 6, timestamp)
+                        else:
+                            stock_sheet.append_row([
+                                st.session_state.shelf_label,
+                                wid,
+                                manual_qty,
+                                available_qty,
+                                "",
+                                timestamp,
+                                st.session_state.username
+                            ])
+                        st.success(f"✅ Manual entry saved: {manual_qty} for WID {wid}")
+                        st.rerun()
