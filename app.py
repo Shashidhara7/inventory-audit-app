@@ -3,102 +3,131 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import pytz
 
-# Google Sheets setup
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+# --- Google Sheets Authentication ---
+scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
 client = gspread.authorize(creds)
-sheet = client.open("InventoryStockApp")
+sheet = client.open("InventoryDB")  # Ensure spreadsheet name is correct
+
+# --- Sheet References ---
 raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# Load raw data
-raw_df = pd.DataFrame(raw_sheet.get_all_records())
+# --- Local Time Setup ---
+tz = pytz.timezone("Asia/Kolkata")
+now = datetime.now(tz)
 
-# Load login data
+# --- Load Data ---
+raw_df = pd.DataFrame(raw_sheet.get_all_records())
+stock_df = pd.DataFrame(stock_sheet.get_all_records())
 login_df = pd.DataFrame(login_sheet.get_all_records())
 
-# Page selector
-page = st.sidebar.selectbox("Select Page", ["Login", "Register", "Inventory Audit"])
-
-# Register Page
-if page == "Register":
-    st.title("New User Registration")
-    new_username = st.text_input("Choose a Username")
-    new_password = st.text_input("Choose a Password", type="password")
+# --- Registration Page ---
+def register_user():
+    st.title("🔐 Register New User")
+    new_user = st.text_input("Username")
+    new_pass = st.text_input("Password", type="password")
     if st.button("Register"):
-        if new_username and new_password:
-            login_sheet.append_row([new_username, new_password, datetime.now().strftime("%H:%M:%S")])
-            st.success("Registered successfully. Please go to Login page.")
+        if new_user and new_pass:
+            now_time = now.strftime("%H:%M:%S")
+            today = now.strftime("%Y-%m-%d")
+            login_sheet.append_row([new_user, new_pass, today, now_time])
+            st.success("✅ Registered Successfully. Please login.")
+            st.session_state.page = "login"
         else:
-            st.warning("Please fill in both fields.")
+            st.warning("❗Please enter both username and password.")
 
-# Login Page
-elif page == "Login":
-    st.title("User Login")
+# --- Login Page ---
+def login_page():
+    st.title("🔐 Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        user_match = login_df[(login_df['Username'] == username) & (login_df['Password'] == password)]
-        if not user_match.empty:
-            row_number = user_match.index[0] + 2  # Adjusting for header and 1-based index
-            login_sheet.update_cell(row_number, 3, datetime.now().strftime("%H:%M:%S"))
-            st.session_state["logged_in"] = True
-            st.session_state["username"] = username
-            st.success("Login successful!")
+        login_records = login_sheet.get_all_values()[1:]  # Skip header
+        for idx, row in enumerate(login_records, start=2):  # Row index in sheet
+            if row[0] == username and row[1] == password:
+                st.session_state.user = username
+                # Update timestamp in the same row
+                login_sheet.update_cell(idx, 3, now.strftime("%Y-%m-%d"))
+                login_sheet.update_cell(idx, 4, now.strftime("%H:%M:%S"))
+                st.session_state.page = "main"
+                return
+        st.error("❌ Invalid Credentials")
+
+# --- Main Inventory Audit App ---
+def main_app():
+    st.title("📦 Inventory Stock Count")
+    st.markdown(f"👤 Logged in as: `{st.session_state.user}`")
+
+    shelf = st.text_input("Scan/Enter Shelf Label", key="shelf_label")
+    wid = st.text_input("Scan/Enter WID", key="wid")
+    counted_qty = st.number_input("Enter Counted Quantity", min_value=0, step=1)
+
+    if shelf and wid:
+        match = raw_df[(raw_df["ShelfLabel"] == shelf) & (raw_df["WID"] == wid)]
+        if not match.empty:
+            available_qty = int(match["Quantity"].values[0])
+            vertical = match["Vertical"].values[0]
+            brand = match["Brand"].values[0]
+
+            st.write(f"📦 Available Qty: `{available_qty}`")
+            st.write(f"🏷️ Vertical: `{vertical}`")
+            st.write(f"🏢 Brand: `{brand}`")
+
+            status = ""
+            if counted_qty > available_qty:
+                status = "Excess"
+                st.markdown("### 🟡 Excess Quantity")
+            elif counted_qty < available_qty:
+                status = "Short"
+                st.markdown("### 🔴 Short Quantity")
+            else:
+                status = "OK"
+                st.markdown("### 🟢 Matched (OK)")
         else:
-            st.error("Invalid credentials.")
+            available_qty = 0
+            vertical = ""
+            status = "Location Mismatch"
+            st.markdown("### 🟣 Location Mismatch")
 
-# Inventory Audit Page
-elif page == "Inventory Audit":
-    if not st.session_state.get("logged_in"):
-        st.warning("Please login to access this page.")
-        st.stop()
+        if st.button("Submit Count"):
+            timestamp = now.strftime("%H:%M:%S")
+            today = now.strftime("%Y-%m-%d")
+            stock_sheet.append_row([
+                today, shelf, wid, counted_qty, available_qty,
+                vertical, status, timestamp, st.session_state.user
+            ])
+            st.success("✅ Entry Recorded.")
 
-    st.title("Inventory Stock Count")
+    # --- View Recent Entries with Color ---
+    st.subheader("🧾 Recent Entries")
+    stock_data = pd.DataFrame(stock_sheet.get_all_records())
+    if not stock_data.empty:
+        def highlight_status(row):
+            color = ""
+            if row["Status"] == "Excess":
+                color = "background-color: yellow"
+            elif row["Status"] == "Short":
+                color = "background-color: red; color: white"
+            elif row["Status"] == "OK":
+                color = "background-color: lightgreen"
+            elif row["Status"] == "Location Mismatch":
+                color = "background-color: purple; color: white"
+            return [color] * len(row)
 
-    shelf_label = st.text_input("Scan/Enter Shelf Label")
-    wid = st.text_input("Enter WID")
-    counted_qty = st.number_input("Counted Quantity", min_value=0, step=1)
+        styled_df = stock_data.style.apply(highlight_status, axis=1)
+        st.dataframe(styled_df, use_container_width=True)
 
-    if st.button("Submit Count"):
-        if not shelf_label or not wid:
-            st.warning("Shelf Label and WID are required.")
-            st.stop()
+# --- Page Routing ---
+if "page" not in st.session_state:
+    st.session_state.page = "register"
 
-        raw_match = raw_df[(raw_df["ShelfLabel"] == shelf_label) & (raw_df["WID"] == wid)]
-        if raw_match.empty:
-            st.error("WID not found in Raw data.")
-            st.stop()
-
-        available_qty = int(raw_match["Quantity"].values[0])
-        status = "OK"
-        if counted_qty > available_qty:
-            status = "Excess"
-        elif counted_qty < available_qty:
-            status = "Short"
-
-        stock_data = pd.DataFrame(stock_sheet.get_all_records())
-        existing_row = stock_data[(stock_data["ShelfLabel"] == shelf_label) & (stock_data["WID"] == wid)]
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        casper_id = st.session_state["username"]
-
-        if not existing_row.empty:
-            row_num = existing_row.index[0] + 2  # account for header row
-            stock_sheet.update(f"C{row_num}:F{row_num}", [[counted_qty, available_qty, status, timestamp]])
-            stock_sheet.update_cell(row_num, 6, casper_id)
-            st.success("Count updated successfully.")
-        else:
-            new_row = [shelf_label, wid, counted_qty, available_qty, status, timestamp, casper_id]
-            stock_sheet.append_row(new_row)
-            st.success("Count submitted successfully.")
-
-        # Display status with color
-        if status == "OK":
-            st.markdown("✅ **Status: OK**", unsafe_allow_html=True)
-        elif status == "Excess":
-            st.markdown("<span style='color:orange; font-weight:bold;'>🟠 Status: Excess</span>", unsafe_allow_html=True)
-        elif status == "Short":
-            st.markdown("<span style='color:red; font-weight:bold;'>🔴 Status: Short</span>", unsafe_allow_html=True)
+if st.session_state.page == "register":
+    register_user()
+elif st.session_state.page == "login":
+    login_page()
+elif st.session_state.page == "main":
+    main_app()
