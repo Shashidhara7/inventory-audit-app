@@ -13,7 +13,7 @@ creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes
 client = gspread.authorize(creds)
 
 # Open Google Sheet
-sheet = client.open("InventoryDB")
+sheet = client.open("InventoryStockApp")
 raw_ws = sheet.worksheet("Raw")
 stock_ws = sheet.worksheet("StockCountDetails")
 login_ws = sheet.worksheet("LoginDetails")
