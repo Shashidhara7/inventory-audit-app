@@ -72,6 +72,7 @@ def get_stock_data():
     return pd.DataFrame(stock_sheet.get_all_records())
 
 # 🔐 LOGIN PAGE
+# 🔐 LOGIN PAGE
 if not st.session_state.logged_in:
     st.title("🔐 Login Page")
     tabs = st.tabs(["Login", "Register"])
@@ -89,25 +90,31 @@ if not st.session_state.logged_in:
             elif login_status == "invalid":
                 st.error("❌ Incorrect password. Please try again.")
             elif login_status == "deleted":
-                st.warning("⚠️ This account doesn't exist anymore. Please register again.")
+                st.warning("⚠️ Account not found. Please register below.")
+                st.session_state.show_registration = True
 
     with tabs[1]:
-        new_username = st.text_input("New Username")
-        new_password = st.text_input("New Password", type="password")
-        if st.button("Register"):
-            df = get_login_data()
-            if new_username.strip().lower() in df["Username"].str.strip().str.lower().values:
-                st.warning("⚠️ Username already exists.")
-            else:
-                now = datetime.now()
-                login_sheet.append_row([
-                    now.strftime("%Y-%m-%d"),
-                    new_username.strip(),
-                    new_password.strip(),
-                    now.strftime("%H:%M:%S")
-                ])
-                st.success("✅ Registered successfully! Please login now.")
-                st.rerun()
+        if st.session_state.get("show_registration", True):
+            new_username = st.text_input("New Username", key="reg_user")
+            new_password = st.text_input("New Password", type="password", key="reg_pass")
+            if st.button("Register"):
+                df = get_login_data()
+                if new_username.strip().lower() in df["Username"].str.strip().str.lower().values:
+                    st.warning("⚠️ Username already exists. Try a different one.")
+                else:
+                    now = datetime.now()
+                    login_sheet.append_row([
+                        now.strftime("%Y-%m-%d"),
+                        new_username.strip(),
+                        new_password.strip(),
+                        now.strftime("%H:%M:%S")
+                    ])
+                    st.success("✅ Registered successfully! Please login.")
+                    st.session_state.show_registration = False
+                    st.rerun()
+        else:
+            st.info("✅ You can now login with your new credentials.")
+
 
 # 📦 MAIN APP
 else:
