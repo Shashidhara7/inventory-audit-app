@@ -186,6 +186,7 @@ else:
                     - **Brand**: `{row['Brand']}`
                     - **Vertical**: `{vertical}`
                     - **Available Qty**: `{row['Quantity']}`
+                    - **status**: `{row['Status']}`
                     """)
                     counted = st.number_input("Enter Counted Quantity", min_value=0, step=1)
 
