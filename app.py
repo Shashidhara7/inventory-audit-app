@@ -15,10 +15,10 @@ raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# Ensure headers
-expected_headers = ["ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
+# Ensure headers with Vertical right after WID
+expected_headers = ["ShelfLabel", "WID", "Vertical", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
 if stock_sheet.row_values(1) != expected_headers:
-    stock_sheet.update("A1:G1", [expected_headers])
+    stock_sheet.update("A1:H1", [expected_headers])
 
 # Session defaults
 st.session_state.setdefault("logged_in", False)
@@ -34,14 +34,10 @@ def validate_login(username, password):
     df = get_login_data()
     if df.empty:
         return False
-
     username = username.strip().lower()
     password = password.strip()
-
     for _, row in df.iterrows():
-        stored_user = str(row.get("Username", "")).strip().lower()
-        stored_pass = str(row.get("Password", "")).strip()
-        if username == stored_user and password == stored_pass:
+        if username == str(row.get("Username", "")).strip().lower() and password == str(row.get("Password", "")).strip():
             return True
     return False
 
@@ -59,7 +55,6 @@ if not st.session_state.logged_in:
     with tabs[0]:
         username = st.text_input("Username", key="login_user")
         password = st.text_input("Password", type="password", key="login_pass")
-
         if st.button("Login"):
             if validate_login(username, password):
                 st.session_state.logged_in = True
@@ -72,7 +67,6 @@ if not st.session_state.logged_in:
     with tabs[1]:
         new_username = st.text_input("New Username")
         new_password = st.text_input("New Password", type="password")
-
         if st.button("Register"):
             df = get_login_data()
             if new_username.strip().lower() in df["Username"].str.strip().str.lower().values:
@@ -123,10 +117,11 @@ else:
                 selected_wid = st.selectbox("🔽 Select WID to Validate", options=remaining_wids)
                 if selected_wid:
                     row = shelf_df[shelf_df["WID"] == selected_wid].iloc[0]
+                    vertical = row.get("Vertical", "")
                     st.markdown(f"""
                     ### 🔍 WID Details
                     - **Brand**: `{row['Brand']}`
-                    - **Vertical**: `{row['Vertical']}`
+                    - **Vertical**: `{vertical}`
                     - **Available Qty**: `{row['Quantity']}`
                     """)
                     counted = st.number_input("Enter Counted Quantity", min_value=0, step=1)
@@ -144,14 +139,16 @@ else:
 
                         if not existing.empty:
                             row_index = existing.index[0] + 2
-                            stock_sheet.update_cell(row_index, 3, counted)
-                            stock_sheet.update_cell(row_index, 5, status)
-                            stock_sheet.update_cell(row_index, 6, timestamp)
+                            stock_sheet.update_cell(row_index, 3, vertical)
+                            stock_sheet.update_cell(row_index, 4, counted)
+                            stock_sheet.update_cell(row_index, 6, status)
+                            stock_sheet.update_cell(row_index, 7, timestamp)
                             st.success("✅ Updated existing entry.")
                         else:
                             stock_sheet.append_row([
                                 st.session_state.shelf_label,
                                 selected_wid,
+                                vertical,
                                 counted,
                                 available,
                                 status,
