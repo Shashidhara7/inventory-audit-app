@@ -199,26 +199,21 @@ else:
                     raw_df_full = get_raw_data()
                     scanned_df = raw_df_full[raw_df_full["WID"] == selected_wid]
 
-                    # Default fields
                     vertical = ""
                     available = ""
                     brand = ""
-                    status = "Unknown WID"  # fallback
-                    
+                    status = "Unknown WID"
+
                     if not scanned_df.empty:
                         actual_shelf = scanned_df.iloc[0]["ShelfLabel"]
-                        brand = scanned_df.iloc[0].get("Brand", "")
-                        vertical = scanned_df.iloc[0].get("Vertical", "")
-                        available = int(scanned_df.iloc[0].get("Quantity", 0))
 
-                        # Match logic
                         if actual_shelf == st.session_state.shelf_label:
+                            brand = scanned_df.iloc[0].get("Brand", "")
+                            vertical = scanned_df.iloc[0].get("Vertical", "")
+                            available = int(scanned_df.iloc[0].get("Quantity", 0))
                             status = "Short" if counted < available else "Excess" if counted > available else "OK"
                         else:
                             status = "Misplaced"
-                            brand = ""
-                            vertical = ""
-                            available = ""
 
                     stock_df = get_stock_data()
                     existing = stock_df[
@@ -249,4 +244,12 @@ else:
 
                     st.session_state.validated_wids.append(selected_wid)
                     st.session_state.selected_wid = ""
+
+                    # 💡 Clear dropdown
+                    st.session_state.dropdown_clear = True
                     st.rerun()
+
+                # Add this outside your button logic, where the dropdown is defined
+                if st.session_state.get("dropdown_clear"):
+                    selected_wid = ""
+                    st.session_state.dropdown_clear = False
