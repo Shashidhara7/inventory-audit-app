@@ -4,36 +4,54 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import pandas as pd
 
-# Google Sheet Auth
+# 🌄 Supply Chain Theme Background
+st.markdown("""
+    <style>
+    .stApp {
+        background-image: url("https://images.unsplash.com/photo-1581092160611-1c67e48ea8f3?auto=format&fit=crop&w=1400&q=80");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }
+    .stButton>button, .stTextInput>div>div>input {
+        background-color: #005f73;
+        color: white;
+        border-radius: 8px;
+        font-weight: bold;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# 🗂️ Google Sheets Auth
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
 client = gspread.authorize(creds)
 
-# Sheet references
+# 🔗 Sheet References
 sheet = client.open("InventoryStockApp")
 raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# Ensure headers with Vertical right after WID
+# 📋 Ensure Updated Headers
 expected_headers = ["ShelfLabel", "WID", "Vertical", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
 if stock_sheet.row_values(1) != expected_headers:
     stock_sheet.update("A1:H1", [expected_headers])
 
-# Session defaults
+# 🧠 Session Defaults
 st.session_state.setdefault("logged_in", False)
 st.session_state.setdefault("shelf_label", "")
 st.session_state.setdefault("validated_wids", [])
 st.session_state.setdefault("username", "")
 
-# Helper functions
+# 🔧 Helper Functions
 def get_login_data():
     return pd.DataFrame(login_sheet.get_all_records())
 
 def validate_login(username, password):
     df = get_login_data()
-    if df.empty:
-        return False
+    if df.empty: return False
     username = username.strip().lower()
     password = password.strip()
     for _, row in df.iterrows():
@@ -47,7 +65,7 @@ def get_raw_data():
 def get_stock_data():
     return pd.DataFrame(stock_sheet.get_all_records())
 
-# -------- LOGIN PAGE --------
+# 🔐 LOGIN PAGE
 if not st.session_state.logged_in:
     st.title("🔐 Login Page")
     tabs = st.tabs(["Login", "Register"])
@@ -82,7 +100,7 @@ if not st.session_state.logged_in:
                 st.success("✅ Registered successfully! Please login now.")
                 st.rerun()
 
-# -------- MAIN APP --------
+# 📦 MAIN APP
 else:
     st.title("📦 Inventory Stock Count App")
     st.sidebar.success(f"👋 Logged in as `{st.session_state.username}`")
