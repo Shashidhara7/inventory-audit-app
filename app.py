@@ -51,13 +51,19 @@ def get_login_data():
 
 def validate_login(username, password):
     df = get_login_data()
-    if df.empty: return False
+    if df.empty:
+        return "deleted"
+
     username = username.strip().lower()
     password = password.strip()
-    for _, row in df.iterrows():
-        if username == str(row.get("Username", "")).strip().lower() and password == str(row.get("Password", "")).strip():
-            return True
-    return False
+
+    match = df[df["Username"].str.strip().str.lower() == username]
+    if match.empty:
+        return "deleted"
+    elif password == str(match.iloc[0]["Password"]).strip():
+        return "valid"
+    else:
+        return "invalid"
 
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
@@ -74,13 +80,16 @@ if not st.session_state.logged_in:
         username = st.text_input("Username", key="login_user")
         password = st.text_input("Password", type="password", key="login_pass")
         if st.button("Login"):
-            if validate_login(username, password):
+            login_status = validate_login(username, password)
+            if login_status == "valid":
                 st.session_state.logged_in = True
                 st.session_state.username = username
                 st.success("✅ Login successful!")
                 st.rerun()
-            else:
-                st.error("❌ Invalid username or password.")
+            elif login_status == "invalid":
+                st.error("❌ Incorrect password. Please try again.")
+            elif login_status == "deleted":
+                st.warning("⚠️ This account doesn't exist anymore. Please register again.")
 
     with tabs[1]:
         new_username = st.text_input("New Username")
