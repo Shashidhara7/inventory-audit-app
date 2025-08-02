@@ -71,7 +71,36 @@ def get_raw_data():
 def get_stock_data():
     return pd.DataFrame(stock_sheet.get_all_records())
 
-# 🔐 LOGIN PAGE
+def log_daily_summary():
+    stock_df = get_stock_data()
+
+    # Filter today's data for the active ShelfLabel
+    today = datetime.now().strftime("%Y-%m-%d")
+    daily_df = stock_df[
+        (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
+        (stock_df["Timestamp"].str.startswith(today))
+    ]
+
+    if daily_df.empty:
+        st.warning("📭 No entries to summarize for today.")
+        return
+
+    # Create summary: Status count
+    summary_df = daily_df.groupby("Status").size().reset_index(name="Count")
+    summary_df.insert(0, "ShelfLabel", st.session_state.shelf_label)
+    summary_df.insert(0, "Date", today)
+
+    # Append to DailyReports sheet
+    try:
+        report_sheet = sheet.worksheet("DailyReports")
+    except gspread.WorksheetNotFound:
+        report_sheet = sheet.add_worksheet(title="DailyReports", rows=1000, cols=10)
+
+    for _, row in summary_df.iterrows():
+        report_sheet.append_row(row.tolist())
+
+    st.success("📝 Daily summary saved to DailyReports sheet.")
+
 # 🔐 LOGIN PAGE
 if not st.session_state.logged_in:
     st.title("🔐 Login Page")
@@ -201,5 +230,7 @@ else:
                 st.success("🎉 All WIDs under this Shelf Label have been validated.")
 
     if st.button("🔄 Reset Validated WID List"):
+        if st.session_state.shelf_label and st.button("📤 Save Daily Summary"):
+            log_daily_summary()
         st.session_state.validated_wids = []
         st.rerun()
