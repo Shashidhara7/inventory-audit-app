@@ -196,7 +196,18 @@ else:
                 if st.button("✅ Save This WID"):
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     available = int(row["Quantity"])
-                    status = "Short" if counted < available else "Excess" if counted > available else "OK"
+                    
+                    # 🧠 Validate ShelfLabel vs scanned WID from Raw sheet
+                    raw_df_full = get_raw_data()
+                    scanned_df = raw_df_full[raw_df_full["WID"] == selected_wid]
+                    scanned_shelf = scanned_df.iloc[0]["ShelfLabel"] if not scanned_df.empty else None
+                    vertical = row.get("Vertical", "")
+
+                    # 🧾 Status logic
+                    if scanned_shelf != st.session_state.shelf_label:
+                        status = "Location Changed"
+                    else:
+                        status = "Short" if counted < available else "Excess" if counted > available else "OK"
 
                     stock_df = get_stock_data()
                     if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
@@ -205,7 +216,7 @@ else:
                             (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
                         ]
                     else:
-                        st.error("🛑 'ShelfLabel' or 'WID' column not found in stock_df.")
+                        st.error("🛑 'ShelfLabel' or 'WID' column missing in Stock sheet.")
                         existing = pd.DataFrame()
 
                     if not existing.empty:
@@ -213,4 +224,21 @@ else:
                         stock_sheet.update_cell(row_index, 3, vertical)
                         stock_sheet.update_cell(row_index, 4, counted)
                         stock_sheet.update_cell(row_index, 6, status)
-                        stock_sheet.update_cell
+                        stock_sheet.update_cell(row_index, 7, timestamp)
+                        st.success(f"✅ Scanned WID updated with status: `{status}`")
+                    else:
+                        stock_sheet.append_row([
+                            st.session_state.shelf_label,
+                            selected_wid,
+                            vertical,
+                            counted,
+                            available,
+                            status,
+                            timestamp,
+                            st.session_state.username
+                        ])
+                        st.success(f"✅ Scanned WID added with status: `{status}`")
+
+                    st.session_state.validated_wids.append(selected_wid)
+                    st.session_state.selected_wid = ""
+                    st.rerun()
