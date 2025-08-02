@@ -21,17 +21,10 @@ if stock_sheet.row_values(1) != expected_headers:
     stock_sheet.update("A1:G1", [expected_headers])
 
 # Session defaults
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if "shelf_label" not in st.session_state:
-    st.session_state.shelf_label = ""
-
-if "validated_wids" not in st.session_state:
-    st.session_state.validated_wids = []
-
-if "username" not in st.session_state:
-    st.session_state.username = ""
+st.session_state.setdefault("logged_in", False)
+st.session_state.setdefault("shelf_label", "")
+st.session_state.setdefault("validated_wids", [])
+st.session_state.setdefault("username", "")
 
 # Helper functions
 def get_login_data():
@@ -41,7 +34,16 @@ def validate_login(username, password):
     df = get_login_data()
     if df.empty:
         return False
-    return ((df['Username'] == username) & (df['Password'] == password)).any()
+
+    username = username.strip().lower()
+    password = password.strip()
+
+    for _, row in df.iterrows():
+        stored_user = str(row.get("Username", "")).strip().lower()
+        stored_pass = str(row.get("Password", "")).strip()
+        if username == stored_user and password == stored_pass:
+            return True
+    return False
 
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
@@ -52,8 +54,8 @@ def get_stock_data():
 # -------- LOGIN PAGE --------
 if not st.session_state.logged_in:
     st.title("🔐 Login Page")
-
     tabs = st.tabs(["Login", "Register"])
+
     with tabs[0]:
         username = st.text_input("Username", key="login_user")
         password = st.text_input("Password", type="password", key="login_pass")
@@ -73,14 +75,14 @@ if not st.session_state.logged_in:
 
         if st.button("Register"):
             df = get_login_data()
-            if new_username in df["Username"].values:
+            if new_username.strip().lower() in df["Username"].str.strip().str.lower().values:
                 st.warning("⚠️ Username already exists.")
             else:
                 now = datetime.now()
                 login_sheet.append_row([
                     now.strftime("%Y-%m-%d"),
-                    new_username,
-                    new_password,
+                    new_username.strip(),
+                    new_password.strip(),
                     now.strftime("%H:%M:%S")
                 ])
                 st.success("✅ Registered successfully! Please login now.")
@@ -89,7 +91,6 @@ if not st.session_state.logged_in:
 # -------- MAIN APP --------
 else:
     st.title("📦 Inventory Stock Count App")
-
     st.sidebar.success(f"👋 Logged in as `{st.session_state.username}`")
     if st.sidebar.button("🚪 Logout"):
         st.session_state.logged_in = False
@@ -133,13 +134,7 @@ else:
                     if st.button("✅ Save This WID"):
                         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         available = int(row["Quantity"])
-
-                        if counted < available:
-                            status = "Short"
-                        elif counted > available:
-                            status = "Excess"
-                        else:
-                            status = "OK"
+                        status = "Short" if counted < available else "Excess" if counted > available else "OK"
 
                         stock_df = get_stock_data()
                         existing = stock_df[
