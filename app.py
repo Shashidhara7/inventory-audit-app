@@ -206,7 +206,7 @@ else:
 
                     if not scanned_df.empty:
                         actual_shelf = scanned_df.iloc[0]["ShelfLabel"]
-
+                        
                         if actual_shelf == st.session_state.shelf_label:
                             brand = scanned_df.iloc[0].get("Brand", "")
                             vertical = scanned_df.iloc[0].get("Vertical", "")
@@ -214,6 +214,7 @@ else:
                             status = "Short" if counted < available else "Excess" if counted > available else "OK"
                         else:
                             status = "Misplaced"
+                            # Brand, Vertical, and AvailableQty remain empty
 
                     stock_df = get_stock_data()
                     existing = stock_df[
@@ -223,19 +224,20 @@ else:
 
                     if not existing.empty:
                         row_index = existing.index[0] + 2
-                        stock_sheet.update_cell(row_index, 3, vertical)
+
+                        # 🛑 Only update CountedQty and Status
                         stock_sheet.update_cell(row_index, 4, counted)
-                        stock_sheet.update_cell(row_index, 5, available)
                         stock_sheet.update_cell(row_index, 6, status)
                         stock_sheet.update_cell(row_index, 7, timestamp)
+
                         st.success(f"✅ Updated WID `{selected_wid}` with status: `{status}`")
                     else:
                         stock_sheet.append_row([
                             st.session_state.shelf_label,
                             selected_wid,
-                            vertical,
-                            counted,
-                            available,
+                            "",         # Vertical
+                            counted,    # CountedQty
+                            "",         # AvailableQty
                             status,
                             timestamp,
                             st.session_state.username
@@ -244,12 +246,11 @@ else:
 
                     st.session_state.validated_wids.append(selected_wid)
                     st.session_state.selected_wid = ""
-
-                    # 💡 Clear dropdown
                     st.session_state.dropdown_clear = True
                     st.rerun()
 
-                # Add this outside your button logic, where the dropdown is defined
+                # After rerun, handle dropdown clear
                 if st.session_state.get("dropdown_clear"):
                     selected_wid = ""
+                    st.toast("Dropdown cleared ✅", icon="🧹")
                     st.session_state.dropdown_clear = False
