@@ -61,80 +61,90 @@ if not st.session_state.logged_in:
 else:
     st.title("📦 Stock Count App")
 
+    raw_df = get_raw_data()
+
     if not st.session_state.shelf_label:
         new_shelf = st.text_input("Scan or Enter NEW Shelf Label")
         if new_shelf:
             st.session_state.shelf_label = new_shelf
             st.success(f"Shelf Label set to: {new_shelf}")
+            st.rerun()
     else:
         st.info(f"📌 Active Shelf Label: {st.session_state.shelf_label}")
         if st.button("🔁 Change Shelf Label"):
             st.session_state.shelf_label = ""
+            st.rerun()
 
-    wid = st.text_input("Scan or Enter WID to count", key="wid_input")
+        # Filter WIDs by shelf label
+        filtered_raw = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
 
-    if wid:
-        raw_df = get_raw_data()
-        matching = raw_df[
-            (raw_df["ShelfLabel"] == st.session_state.shelf_label) &
-            (raw_df["WID"] == wid)
-        ]
+        if not filtered_raw.empty:
+            st.subheader("📝 Counted Quantities")
 
-        if not matching.empty:
-            brand = matching.iloc[0]["Brand"]
-            vertical = matching.iloc[0]["Vertical"]
-            available_qty = int(matching.iloc[0]["Quantity"])
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Dictionary to collect inputs
+            counted_inputs = {}
+            for idx, row in filtered_raw.iterrows():
+                wid = row["WID"]
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    st.markdown(f"**WID**: {wid} — Brand: {row['Brand']}, Vertical: {row['Vertical']}, Available: {row['Quantity']}")
+                with col2:
+                    qty = st.number_input(f"Counted Qty for {wid}", min_value=0, step=1, key=f"counted_{wid}")
+                    counted_inputs[wid] = qty
 
-            stock_df = get_stock_data()
-            existing = stock_df[
-                (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
-                (stock_df["WID"] == wid)
-            ]
+            if st.button("💾 Save Counted Data"):
+                stock_df = get_stock_data()
+                updated_rows = []
 
-            if not existing.empty:
-                idx = existing.index[0]
-                counted_qty = int(existing.iloc[0]["CountedQty"]) + 1
-                stock_sheet.update_cell(idx + 2, 3, counted_qty)
-                stock_sheet.update_cell(idx + 2, 6, timestamp)
-                st.success("✅ WID already counted — quantity updated")
-            else:
-                counted_qty = 1
-                stock_sheet.append_row([
-                    st.session_state.shelf_label,
-                    wid,
-                    counted_qty,
-                    available_qty,
-                    "",  # Status will be calculated and shown
-                    timestamp,
-                    st.session_state.username
-                ])
-                st.success("✅ New WID entry added")
+                for wid, counted_qty in counted_inputs.items():
+                    raw_row = filtered_raw[filtered_raw["WID"] == wid].iloc[0]
+                    brand = raw_row["Brand"]
+                    vertical = raw_row["Vertical"]
+                    available_qty = int(raw_row["Quantity"])
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Calculate status
-            if counted_qty < available_qty:
-                status = "Short"
-                required_qty = available_qty - counted_qty
-                status_color = "red"
-            elif counted_qty > available_qty:
-                status = "Excess"
-                required_qty = counted_qty - available_qty
-                status_color = "orange"
-            else:
-                status = "OK"
-                required_qty = 0
-                status_color = "green"
+                    # Status calc
+                    if counted_qty < available_qty:
+                        status = "Short"
+                    elif counted_qty > available_qty:
+                        status = "Excess"
+                    else:
+                        status = "OK"
 
-            # Show result
-            st.markdown(f"""
-            ### 🧾 Scan Result
-            - **Brand**: {brand}
-            - **Vertical**: {vertical}
-            - **Available Qty**: {available_qty}
-            - **Counted Qty**: {counted_qty}
-            - **Required Qty**: {required_qty}
-            - **Status**: :{status_color}[**{status}**]
-            """)
+                    existing = stock_df[
+                        (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
+                        (stock_df["WID"] == wid)
+                    ]
 
+                    if not existing.empty:
+                        row_index = existing.index[0] + 2
+                        stock_sheet.update_cell(row_index, 3, counted_qty)
+                        stock_sheet.update_cell(row_index, 5, status)
+                        stock_sheet.update_cell(row_index, 6, timestamp)
+                    else:
+                        stock_sheet.append_row([
+                            st.session_state.shelf_label,
+                            wid,
+                            counted_qty,
+                            available_qty,
+                            status,
+                            timestamp,
+                            st.session_state.username
+                        ])
+
+                    updated_rows.append({
+                        "WID": wid,
+                        "Brand": brand,
+                        "Vertical": vertical,
+                        "AvailableQty": available_qty,
+                        "CountedQty": counted_qty,
+                        "Status": status
+                    })
+
+                # Show summary table
+                st.success("✅ All entries saved successfully!")
+                summary_df = pd.DataFrame(updated_rows)
+                st.subheader("📋 Summary of This Entry")
+                st.dataframe(summary_df)
         else:
-            st.error("❌ WID not found for this shelf.")
+            st.warning("⚠️ No WIDs found for this Shelf Label.")
