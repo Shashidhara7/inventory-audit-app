@@ -15,14 +15,14 @@ raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# Ensure StockCountDetails has correct headers
+# Ensure StockCountDetails headers
 expected_headers = ["ShelfLabel", "WID", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
 actual_headers = stock_sheet.row_values(1)
 if actual_headers != expected_headers:
     stock_sheet.update("A1:G1", [expected_headers])
     st.warning("⚠️ 'StockCountDetails' headers were missing or incorrect. They have been reset.")
 
-# Helper functions
+# Helper Functions
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
 
@@ -37,21 +37,43 @@ def login(username, password):
     match = login_df[(login_df["Username"] == username) & (login_df["Password"] == password)]
     return not match.empty
 
-# Session state defaults
+def user_exists(username):
+    login_df = get_login_data()
+    return username in login_df["Username"].values
+
+# Session state
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
-
+if "register" not in st.session_state:
+    st.session_state.register = False
 if "shelf_label" not in st.session_state:
     st.session_state.shelf_label = ""
-
 if "validated_wids" not in st.session_state:
     st.session_state.validated_wids = []
 
-# Login page
-if not st.session_state.logged_in:
+# Registration Page
+if st.session_state.register:
+    st.title("📝 Register New User")
+    new_username = st.text_input("Choose a Username")
+    new_password = st.text_input("Choose a Password", type="password")
+    if st.button("Register"):
+        if user_exists(new_username):
+            st.warning("⚠️ Username already exists. Choose a different one.")
+        else:
+            login_sheet.append_row([datetime.now().strftime("%Y-%m-%d"), new_username, new_password, datetime.now().strftime("%H:%M:%S")])
+            st.success("✅ Registration successful! Please login.")
+            st.session_state.register = False
+            st.rerun()
+    if st.button("🔙 Back to Login"):
+        st.session_state.register = False
+        st.rerun()
+
+# Login Page
+elif not st.session_state.logged_in:
     st.title("🔐 Login")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
+
     if st.button("Login"):
         if login(username, password):
             st.session_state.logged_in = True
@@ -59,21 +81,17 @@ if not st.session_state.logged_in:
             st.success("✅ Login successful!")
             st.rerun()
         else:
-            st.error("❌ Invalid credentials. Please register if you're a new user.")
-            if st.button("Register"):
-                login_df = get_login_data()
-                if username in login_df["Username"].values:
-                    st.warning("⚠️ Username already exists.")
-                else:
-                    login_sheet.append_row([datetime.now().strftime("%Y-%m-%d"), username, password, datetime.now().strftime("%H:%M:%S")])
-                    st.success("✅ Registered successfully. Please login now.")
-                    st.rerun()
+            st.error("❌ Invalid credentials.")
+    
+    if st.button("Register"):
+        st.session_state.register = True
+        st.rerun()
 
 # Main App
 else:
     st.title("📦 Inventory Stock Count App")
 
-    # Shelf Label input
+    # Shelf Label
     if not st.session_state.shelf_label:
         shelf_input = st.text_input("Scan or Enter Shelf Label")
         if shelf_input:
@@ -87,7 +105,6 @@ else:
             st.session_state.validated_wids = []
             st.rerun()
 
-        # Fetch data
         raw_df = get_raw_data()
         shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
 
@@ -118,7 +135,6 @@ else:
                         stock_df = get_stock_data()
                         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                        # Determine status
                         if counted_qty < available_qty:
                             status = "Short"
                         elif counted_qty > available_qty:
@@ -126,7 +142,6 @@ else:
                         else:
                             status = "OK"
 
-                        # Check if already exists
                         existing = stock_df[
                             (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
                             (stock_df["WID"] == selected_wid)
@@ -155,7 +170,6 @@ else:
             else:
                 st.success("🎉 All WIDs under this Shelf Label have been validated.")
 
-    # Reset option
     if st.button("🔄 Reset Validated WID List"):
         st.session_state.validated_wids = []
         st.rerun()
