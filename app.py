@@ -166,10 +166,14 @@ else:
                         status = "Short" if counted < available else "Excess" if counted > available else "OK"
 
                         stock_df = get_stock_data()
-                        existing = stock_df[
-                            (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
-                            (stock_df["WID"] == selected_wid)
-                        ]
+                        if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
+                            existing = stock_df[
+                                (stock_df["ShelfLabel"].astype(str).str.strip() == str(st.session_state.shelf_label).strip()) &
+                                (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
+                            ]
+                        else:
+                            st.error("🛑 'ShelfLabel' or 'WID' column not found in stock_df. Please check your data source.")
+                            existing = pd.DataFrame()
 
                         if not existing.empty:
                             row_index = existing.index[0] + 2
