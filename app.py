@@ -44,6 +44,7 @@ st.session_state.setdefault("logged_in", False)
 st.session_state.setdefault("shelf_label", "")
 st.session_state.setdefault("validated_wids", [])
 st.session_state.setdefault("username", "")
+st.session_state.setdefault("selected_wid", "")
 
 # 🔧 Helper Functions
 def get_login_data():
@@ -53,10 +54,8 @@ def validate_login(username, password):
     df = get_login_data()
     if df.empty:
         return "deleted"
-
     username = username.strip().lower()
     password = password.strip()
-
     match = df[df["Username"].str.strip().str.lower() == username]
     if match.empty:
         return "deleted"
@@ -73,32 +72,23 @@ def get_stock_data():
 
 def log_daily_summary():
     stock_df = get_stock_data()
-
-    # Filter today's data for the active ShelfLabel
     today = datetime.now().strftime("%Y-%m-%d")
     daily_df = stock_df[
         (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
         (stock_df["Timestamp"].str.startswith(today))
     ]
-
     if daily_df.empty:
         st.warning("📭 No entries to summarize for today.")
         return
-
-    # Create summary: Status count
     summary_df = daily_df.groupby("Status").size().reset_index(name="Count")
     summary_df.insert(0, "ShelfLabel", st.session_state.shelf_label)
     summary_df.insert(0, "Date", today)
-
-    # Append to DailyReports sheet
     try:
         report_sheet = sheet.worksheet("DailyReports")
     except gspread.WorksheetNotFound:
         report_sheet = sheet.add_worksheet(title="DailyReports", rows=1000, cols=10)
-
     for _, row in summary_df.iterrows():
         report_sheet.append_row(row.tolist())
-
     st.success("📝 Daily summary saved to DailyReports sheet.")
 
 # 🔐 LOGIN PAGE
@@ -144,7 +134,6 @@ if not st.session_state.logged_in:
         else:
             st.info("✅ You can now login with your new credentials.")
 
-
 # 📦 MAIN APP
 else:
     st.title("📦 Inventory Stock Count App")
@@ -154,6 +143,7 @@ else:
         st.session_state.username = ""
         st.session_state.shelf_label = ""
         st.session_state.validated_wids = []
+        st.session_state.selected_wid = ""
         st.rerun()
 
     if not st.session_state.shelf_label:
@@ -167,6 +157,7 @@ else:
         if st.button("🔁 Change Shelf Label"):
             st.session_state.shelf_label = ""
             st.session_state.validated_wids = []
+            st.session_state.selected_wid = ""
             st.rerun()
 
         raw_df = get_raw_data()
@@ -175,62 +166,51 @@ else:
         if shelf_df.empty:
             st.warning("⚠️ No data found for this Shelf Label.")
         else:
+            # 🔍 Optional WID scan
+            optional_wid = st.text_input("🔎 Scan or Enter WID (optional)")
+            if optional_wid:
+                if optional_wid in shelf_df["WID"].values:
+                    st.session_state.selected_wid = optional_wid
+                    st.success(f"WID `{optional_wid}` matched! Preloading...")
+                else:
+                    st.warning(f"⚠️ WID `{optional_wid}` not found under Shelf Label `{st.session_state.shelf_label}`.")
+
+            # 🔽 Dropdown WID selection with scan override
             remaining_wids = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"].tolist()
-            if remaining_wids:
-                selected_wid = st.selectbox("🔽 Select WID to Validate", options=remaining_wids)
-                if selected_wid:
-                    row = shelf_df[shelf_df["WID"] == selected_wid].iloc[0]
-                    vertical = row.get("Vertical", "")
-                    st.markdown(f"""
-                    ### 🔍 WID Details
-                    - **Brand**: `{row['Brand']}`
-                    - **Vertical**: `{vertical}`
-                    - **Available Qty**: `{row['Quantity']}`
-                    """)
-                    counted = st.number_input("Enter Counted Quantity", min_value=0, step=1)
-
-                    if st.button("✅ Save This WID"):
-                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        available = int(row["Quantity"])
-                        status = "Short" if counted < available else "Excess" if counted > available else "OK"
-
-                        stock_df = get_stock_data()
-                        if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
-                            existing = stock_df[
-                                (stock_df["ShelfLabel"].astype(str).str.strip() == str(st.session_state.shelf_label).strip()) &
-                                (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
-                            ]
-                        else:
-                            st.error("🛑 'ShelfLabel' or 'WID' column not found in stock_df. Please check your data source.")
-                            existing = pd.DataFrame()
-
-                        if not existing.empty:
-                            row_index = existing.index[0] + 2
-                            stock_sheet.update_cell(row_index, 3, vertical)
-                            stock_sheet.update_cell(row_index, 4, counted)
-                            stock_sheet.update_cell(row_index, 6, status)
-                            stock_sheet.update_cell(row_index, 7, timestamp)
-                            st.success("✅ Updated existing entry.")
-                        else:
-                            stock_sheet.append_row([
-                                st.session_state.shelf_label,
-                                selected_wid,
-                                vertical,
-                                counted,
-                                available,
-                                status,
-                                timestamp,
-                                st.session_state.username
-                            ])
-                            st.success("✅ New WID entry saved.")
-
-                        st.session_state.validated_wids.append(selected_wid)
-                        st.rerun()
+            if "selected_wid" in st.session_state and st.session_state.selected_wid in remaining_wids:
+                selected_wid = st.session_state.selected_wid
             else:
-                st.success("🎉 All WIDs under this Shelf Label have been validated.")
+                selected_wid = st.selectbox("🔽 Select WID to Validate", options=remaining_wids)
 
-    if st.button("🔄 Reset Validated WID List"):
-        if st.session_state.shelf_label and st.button("📤 Save Daily Summary"):
-            log_daily_summary()
-        st.session_state.validated_wids = []
-        st.rerun()
+            if selected_wid:
+                row = shelf_df[shelf_df["WID"] == selected_wid].iloc[0]
+                vertical = row.get("Vertical", "")
+                st.markdown(f"""
+                ### 🔍 WID Details
+                - **Brand**: `{row['Brand']}`
+                - **Vertical**: `{vertical}`
+                - **Available Qty**: `{row['Quantity']}`
+                """)
+                counted = st.number_input("Enter Counted Quantity", min_value=0, step=1)
+
+                if st.button("✅ Save This WID"):
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    available = int(row["Quantity"])
+                    status = "Short" if counted < available else "Excess" if counted > available else "OK"
+
+                    stock_df = get_stock_data()
+                    if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
+                        existing = stock_df[
+                            (stock_df["ShelfLabel"].astype(str).str.strip() == str(st.session_state.shelf_label).strip()) &
+                            (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
+                        ]
+                    else:
+                        st.error("🛑 'ShelfLabel' or 'WID' column not found in stock_df.")
+                        existing = pd.DataFrame()
+
+                    if not existing.empty:
+                        row_index = existing.index[0] + 2
+                        stock_sheet.update_cell(row_index, 3, vertical)
+                        stock_sheet.update_cell(row_index, 4, counted)
+                        stock_sheet.update_cell(row_index, 6, status)
+                        stock_sheet.update_cell
