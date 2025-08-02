@@ -196,16 +196,20 @@ else:
                 if st.button("✅ Save This WID"):
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     available = int(row["Quantity"])
-                    
-                    # 🧠 Validate ShelfLabel vs scanned WID from Raw sheet
+                    vertical = row.get("Vertical", "")
+
                     raw_df_full = get_raw_data()
                     scanned_df = raw_df_full[raw_df_full["WID"] == selected_wid]
                     scanned_shelf = scanned_df.iloc[0]["ShelfLabel"] if not scanned_df.empty else None
-                    vertical = row.get("Vertical", "")
 
-                    # 🧾 Status logic
-                    if scanned_shelf != st.session_state.shelf_label:
-                        status = "Location Changed"
+                    # 🧠 Status Logic
+                    if scanned_shelf is None:
+                        status = "Unknown WID"  # Optional fallback if not found anywhere
+                    elif scanned_shelf != st.session_state.shelf_label:
+                        if selected_wid not in shelf_df["WID"].values:
+                            status = "Misplaced"
+                        else:
+                            status = "Location Changed"
                     else:
                         status = "Short" if counted < available else "Excess" if counted > available else "OK"
 
