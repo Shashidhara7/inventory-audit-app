@@ -195,41 +195,45 @@ else:
 
                 if st.button("✅ Save This WID"):
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    available = int(row["Quantity"])
-                    vertical = row.get("Vertical", "")
-
+                    
                     raw_df_full = get_raw_data()
                     scanned_df = raw_df_full[raw_df_full["WID"] == selected_wid]
-                    scanned_shelf = scanned_df.iloc[0]["ShelfLabel"] if not scanned_df.empty else None
 
-                    # 🧠 Status Logic
-                    if scanned_shelf is None:
-                        status = "Unknown WID"  # Optional fallback if not found anywhere
-                    elif scanned_shelf != st.session_state.shelf_label:
-                        if selected_wid not in shelf_df["WID"].values:
-                            status = "Misplaced"
+                    # Default fields
+                    vertical = ""
+                    available = ""
+                    brand = ""
+                    status = "Unknown WID"  # fallback
+                    
+                    if not scanned_df.empty:
+                        actual_shelf = scanned_df.iloc[0]["ShelfLabel"]
+                        brand = scanned_df.iloc[0].get("Brand", "")
+                        vertical = scanned_df.iloc[0].get("Vertical", "")
+                        available = int(scanned_df.iloc[0].get("Quantity", 0))
+
+                        # Match logic
+                        if actual_shelf == st.session_state.shelf_label:
+                            status = "Short" if counted < available else "Excess" if counted > available else "OK"
                         else:
-                            status = "Location Changed"
-                    else:
-                        status = "Short" if counted < available else "Excess" if counted > available else "OK"
+                            status = "Misplaced"
+                            brand = ""
+                            vertical = ""
+                            available = ""
 
                     stock_df = get_stock_data()
-                    if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
-                        existing = stock_df[
-                            (stock_df["ShelfLabel"].astype(str).str.strip() == str(st.session_state.shelf_label).strip()) &
-                            (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
-                        ]
-                    else:
-                        st.error("🛑 'ShelfLabel' or 'WID' column missing in Stock sheet.")
-                        existing = pd.DataFrame()
+                    existing = stock_df[
+                        (stock_df["ShelfLabel"].astype(str).str.strip() == str(st.session_state.shelf_label).strip()) &
+                        (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
+                    ]
 
                     if not existing.empty:
                         row_index = existing.index[0] + 2
                         stock_sheet.update_cell(row_index, 3, vertical)
                         stock_sheet.update_cell(row_index, 4, counted)
+                        stock_sheet.update_cell(row_index, 5, available)
                         stock_sheet.update_cell(row_index, 6, status)
                         stock_sheet.update_cell(row_index, 7, timestamp)
-                        st.success(f"✅ Scanned WID updated with status: `{status}`")
+                        st.success(f"✅ Updated WID `{selected_wid}` with status: `{status}`")
                     else:
                         stock_sheet.append_row([
                             st.session_state.shelf_label,
@@ -241,7 +245,7 @@ else:
                             timestamp,
                             st.session_state.username
                         ])
-                        st.success(f"✅ Scanned WID added with status: `{status}`")
+                        st.success(f"✅ Added WID `{selected_wid}` with status: `{status}`")
 
                     st.session_state.validated_wids.append(selected_wid)
                     st.session_state.selected_wid = ""
