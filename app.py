@@ -99,7 +99,7 @@ if not st.session_state.logged_in:
             new_password = st.text_input("New Password", type="password", key="reg_pass")
             if st.button("Register"):
                 df = get_login_data()
-                if new_username.strip().lower() in df["Username"].str.strip().str.lower().values:
+                if "Username" in df.columns and new_username.strip().lower() in df["Username"].astype(str).str.strip().str.lower().values:
                     st.warning("⚠️ Username already exists. Try a different one.")
                 else:
                     now = datetime.now()
