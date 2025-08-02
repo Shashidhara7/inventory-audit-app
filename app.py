@@ -64,6 +64,10 @@ else:
     raw_df = get_raw_data()
     stock_df = get_stock_data()
 
+    st.write("🧬 Stock Sheet Columns:", stock_df.columns.tolist())
+    st.write("🧬 First few rows of Stock Sheet:", stock_df.head())
+
+
     if not st.session_state.shelf_label:
         new_shelf = st.text_input("Scan or Enter NEW Shelf Label")
         if new_shelf:
