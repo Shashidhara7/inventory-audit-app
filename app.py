@@ -121,7 +121,8 @@ def save_summary_report():
         st.warning("No data to save for your user account.")
         return
 
-    user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date
+    # Convert Timestamp to a formatted date string
+    user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
     
     # 1. Generate and save the summary table
     summary_table = user_stock_df.groupby(["Date", "CasperID", "Status"]).size().reset_index(name="Count")
@@ -292,7 +293,7 @@ else:
             if st.button("🔄 Reset Validated WID List"):
                 st.session_state.validated_wids = []
                 st.rerun()
-            if st.button("📤 Save Summary Report"): # Changed button text
+            if st.button("📤 Save Summary Report"):
                 save_summary_report()
 
     elif page == "Summary":
@@ -305,7 +306,7 @@ else:
             st.info("No stock count data available yet.")
         else:
             user_stock_df = stock_df[stock_df["CasperID"] == st.session_state.username].copy()
-            user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date
+            user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
             
             if user_stock_df.empty:
                 st.info("You have not recorded any counts yet.")
