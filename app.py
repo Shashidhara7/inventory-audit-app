@@ -45,9 +45,7 @@ st.session_state.setdefault("shelf_label", "")
 st.session_state.setdefault("validated_wids", [])
 st.session_state.setdefault("username", "")
 st.session_state.setdefault("show_registration", False)
-st.session_state.setdefault("scanned_wid_input", "")
-st.session_state.setdefault("action_required", "none")
-st.session_state.setdefault("manual_count_wid", "")
+st.session_state.setdefault("scanned_misplaced_wid", "")
 
 # 🔧 Helper Functions
 def get_login_data():
@@ -73,37 +71,23 @@ def get_raw_data():
 def get_stock_data():
     return pd.DataFrame(stock_sheet.get_all_records())
 
-def process_scanned_wid():
-    scanned_wid = st.session_state.scanned_wid_input
-    selected_wid = st.session_state.wid_selector
+def clear_misplaced_input():
+    st.session_state.scanned_misplaced_wid = ""
 
-    if scanned_wid.strip() == "":
-        st.error("Please scan a WID.")
-        return
-
-    # Check if the scanned WID is already validated in this session
-    if scanned_wid in st.session_state.validated_wids:
-        st.warning(f"⚠️ WID `{scanned_wid}` has already been processed.")
-        st.session_state.scanned_wid_input = ""
-        st.session_state.action_required = "none"
-        st.rerun()
-
-    if scanned_wid == selected_wid:
-        # Match found, ask for manual count
-        st.session_state.action_required = "manual_count"
-        st.session_state.manual_count_wid = scanned_wid
-    else:
-        # No match, this is a misplaced item, save automatically
-        process_misplaced_wid(scanned_wid)
-        st.session_state.action_required = "none"
-    
-    st.session_state.scanned_wid_input = "" # Clear the input after processing
-
-def process_misplaced_wid(wid):
+def process_misplaced_wid():
     """Handles scanning of WIDs not expected on the shelf."""
+    wid = st.session_state.scanned_misplaced_wid.strip()
+    if not wid:
+        return
+        
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     shelf_label = st.session_state.shelf_label
     
+    if wid in st.session_state.validated_wids:
+        st.warning(f"⚠️ WID `{wid}` has already been processed.")
+        clear_misplaced_input()
+        return
+
     stock_sheet.append_row([
         shelf_label,
         wid,
@@ -116,8 +100,7 @@ def process_misplaced_wid(wid):
     ])
     st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}`.")
     st.session_state.validated_wids.append(wid)
-    st.session_state.scanned_wid_input = ""
-    st.rerun()
+    clear_misplaced_input()
 
 def save_summary_report():
     """Generates and saves a detailed summary report to a new worksheet."""
@@ -138,6 +121,7 @@ def save_summary_report():
         st.warning("No data to save for your user account.")
         return
 
+    # Convert Timestamp to a formatted date string
     user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
     
     # 1. Generate and save the summary table
@@ -237,37 +221,28 @@ else:
             raw_df = get_raw_data()
             shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
 
+            st.subheader("Scan Misplaced WIDs")
+            st.info("Use this box for items that are on the shelf but not in the list below.")
+            st.text_input(
+                "🔍 Scan a WID (for misplaced items)",
+                key="scanned_misplaced_wid",
+                on_change=process_misplaced_wid
+            )
+
             if shelf_df.empty:
                 st.warning("⚠️ No data found for this Shelf Label.")
             else:
+                st.subheader("Count Expected WIDs")
+                st.info("Select a WID from the list to count items expected on this shelf.")
                 remaining_wids = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"].tolist()
                 
                 if remaining_wids:
-                    st.subheader("WID Scan & Count")
-                    st.info("Scan a WID. If it matches the expected WID below, you will be prompted for a manual count. If not, it will be automatically saved as 'MISPLACED'.")
-                    
-                    st.text_input(
-                        "🔍 Scan a WID",
-                        key="scanned_wid_input",
-                        on_change=process_scanned_wid
-                    )
-
-                    st.selectbox(
-                        "🔽 Expected WIDs on this Shelf",
-                        options=remaining_wids,
-                        key="wid_selector",
-                        index=None,
-                        placeholder="Select an expected WID"
-                    )
-
-                    # Conditional UI for manual count
-                    if st.session_state.action_required == "manual_count":
-                        selected_wid = st.session_state.manual_count_wid
+                    selected_wid = st.selectbox("🔽 Select WID to Validate", options=remaining_wids, key="wid_selector")
+                    if selected_wid:
                         row = shelf_df[shelf_df["WID"] == selected_wid].iloc[0]
                         vertical = row.get("Vertical", "")
                         st.markdown(f"""
-                        ### ✅ Match Found!
-                        - **WID**: `{selected_wid}`
+                        ### 🔍 WID Details
                         - **Brand**: `{row['Brand']}`
                         - **Vertical**: `{vertical}`
                         - **Available Qty**: `{row['Quantity']}`
@@ -310,7 +285,6 @@ else:
                                 st.success("✅ New WID entry saved.")
                             
                             st.session_state.validated_wids.append(selected_wid)
-                            st.session_state.action_required = "none" # Reset state
                             st.rerun()
                 else:
                     st.success("🎉 All WIDs under this Shelf Label have been validated.")
