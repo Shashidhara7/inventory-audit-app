@@ -62,7 +62,7 @@ if scanned_wid and st.session_state.shelf_label:
         ])
 
     st.success(f"✅ Scanned WID: {scanned_wid} — MISPLACED added with Qty: 1")
-    st.experimental_rerun()
+    st.rerun()
 
 # 🔻 Manual WID Selection & Save
 st.markdown("---")
