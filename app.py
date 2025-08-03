@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
+from datetime import datetime
 
 # 📂 Google Sheets Auth
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -15,99 +15,105 @@ raw_sheet = sheet.worksheet("Raw")
 stock_sheet = sheet.worksheet("StockCountDetails")
 login_sheet = sheet.worksheet("LoginDetails")
 
-# 📅 Timestamp
+# Initialize WID scan flag
+if "wid_scanned" not in st.session_state:
+    st.session_state.wid_scanned = False
+
+# 🔍 Shelf Label dropdown
+shelf_labels = raw_sheet.col_values(1)[1:]
+selected_shelf = st.selectbox("📦 Select Shelf Label", sorted(set(shelf_labels)), key="shelf_label")
+
+# Fetch WIDs for the selected shelf
+raw_data = raw_sheet.get_all_records()
+shelf_wids = [row["WID"] for row in raw_data if row["ShelfLabel"] == selected_shelf]
+selected_wid = st.selectbox("🔄 Select WID (for full info update)", ["-- Select --"] + shelf_wids)
+
+# Fetch data from Raw sheet to DataFrame
+raw_df = pd.DataFrame(raw_data)
+
+# WID Scan Input
+scanned_wid = st.text_input("🔍 Scan WID", key="scanned_wid")
+
+# Current timestamp
 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# 🧠 Session State
-if "shelf_label" not in st.session_state:
-    st.session_state.shelf_label = ""
-if "scanned_wid" not in st.session_state:
-    st.session_state.scanned_wid = ""
+# Automatically process scanned WID
+if scanned_wid and not st.session_state.wid_scanned:
+    shelf_label = st.session_state.shelf_label
+    wid = scanned_wid.strip()
 
-st.title("📦 Inventory Stock Count")
+    match = raw_df[(raw_df["ShelfLabel"] == shelf_label) & (raw_df["WID"] == wid)]
 
-# 🔲 Shelf Label Input
-shelf_label = st.text_input("Scan Shelf Label", key="shelf_label_input")
-if shelf_label:
-    st.session_state.shelf_label = shelf_label.strip()
+    if not match.empty:
+        available_qty = match.iloc[0]["Quantity"]
+    else:
+        available_qty = ""
 
-# 📥 Scan WID (Auto Trigger)
-scanned_wid = st.text_input("📮 Scan WID", key="scanned_wid_input")
-
-if scanned_wid and st.session_state.shelf_label:
-    raw_data = raw_sheet.get_all_records()
     stock_data = stock_sheet.get_all_records()
-    raw_df = pd.DataFrame(raw_data)
     stock_df = pd.DataFrame(stock_data)
 
-    existing_rows = stock_df[
-        (stock_df["ShelfLabel"].astype(str).str.strip() == st.session_state.shelf_label) &
-        (stock_df["WID"].astype(str).str.strip() == scanned_wid.strip())
-    ]
+    row_match = stock_df[(stock_df["ShelfLabel"] == shelf_label) & (stock_df["WID"] == wid)]
 
-    if not existing_rows.empty:
-        row_index = existing_rows.index[0] + 2  # +2 for header and 1-based indexing
-        stock_sheet.update_cell(row_index, 3, 1)  # CountedQty
-        stock_sheet.update_cell(row_index, 6, timestamp)  # Timestamp
-        stock_sheet.update_cell(row_index, 7, "MISPLACED")  # Status
+    if not row_match.empty:
+        idx = row_match.index[0] + 2
+        current_count = row_match.iloc[0]["CountedQty"]
+        stock_sheet.update_cell(idx, 3, current_count + 1)
+        stock_sheet.update_cell(idx, 6, timestamp)
+        stock_sheet.update_cell(idx, 7, "MISPLACED")
     else:
         stock_sheet.append_row([
-            st.session_state.shelf_label,
-            scanned_wid.strip(),
-            1,                # CountedQty
-            "",               # AvailableQty
-            "",               # Brand
+            shelf_label,
+            wid,
+            1,
+            available_qty,
+            "",
             timestamp,
-            "MISPLACED"       # Status
+            "MISPLACED"
         ])
 
-    st.success(f"✅ Scanned WID: {scanned_wid} — MISPLACED added with Qty: 1")
+    st.success(f"✅ Scanned WID: {wid} — Counted as 1 and marked MISPLACED")
+    st.session_state.wid_scanned = True
     st.rerun()
 
-# 🔻 Manual WID Selection & Save
-st.markdown("---")
-st.subheader("🔧 Manual WID Save")
+# Reset flag after rerun
+if st.session_state.wid_scanned:
+    st.session_state.wid_scanned = False
 
-wid_options = raw_sheet.col_values(2)[1:]  # Skipping header
-selected_wid = st.selectbox("Select WID", wid_options)
+# Optional: Save full data only when user clicks Save for dropdown WID
+if st.button("💾 Save Dropdown WID"):
+    if selected_wid != "-- Select --":
+        match = raw_df[(raw_df["ShelfLabel"] == selected_shelf) & (raw_df["WID"] == selected_wid)]
 
-if selected_wid:
-    raw_data = raw_sheet.get_all_records()
-    stock_data = stock_sheet.get_all_records()
-    raw_df = pd.DataFrame(raw_data)
-    stock_df = pd.DataFrame(stock_data)
+        if not match.empty:
+            available_qty = match.iloc[0]["Quantity"]
+            vertical = match.iloc[0]["Vertical"]
+            brand = match.iloc[0]["Brand"]
 
-    # Get from Raw
-    raw_row = raw_df[raw_df["WID"].astype(str).str.strip() == selected_wid.strip()]
-    if not raw_row.empty:
-        vertical = raw_row["Vertical"].values[0]
-        brand = raw_row["Brand"].values[0]
-        available_qty = raw_row["Quantity"].values[0]
-        st.markdown(f"**Brand:** {brand}  \n**Vertical:** {vertical}  \n**Available Qty:** {available_qty}")
-        counted_qty = st.number_input("Enter Counted Qty", min_value=0, step=1)
+            stock_data = stock_sheet.get_all_records()
+            stock_df = pd.DataFrame(stock_data)
 
-        if st.button("💾 Save This WID"):
-            existing_rows = stock_df[
-                (stock_df["ShelfLabel"].astype(str).str.strip() == st.session_state.shelf_label) &
-                (stock_df["WID"].astype(str).str.strip() == selected_wid.strip())
-            ]
+            row_match = stock_df[(stock_df["ShelfLabel"] == selected_shelf) & (stock_df["WID"] == selected_wid)]
 
-            if not existing_rows.empty:
-                row_index = existing_rows.index[0] + 2
-                stock_sheet.update_cell(row_index, 3, counted_qty)
-                stock_sheet.update_cell(row_index, 4, available_qty)
-                stock_sheet.update_cell(row_index, 5, brand)
-                stock_sheet.update_cell(row_index, 6, timestamp)
-                stock_sheet.update_cell(row_index, 7, "OK")
-                st.success(f"✅ Updated {selected_wid} with new count: {counted_qty}")
+            if not row_match.empty:
+                idx = row_match.index[0] + 2
+                current_count = row_match.iloc[0]["CountedQty"]
+                stock_sheet.update_cell(idx, 3, current_count + 1)
+                stock_sheet.update_cell(idx, 4, available_qty)
+                stock_sheet.update_cell(idx, 5, "")
+                stock_sheet.update_cell(idx, 6, timestamp)
+                stock_sheet.update_cell(idx, 7, "OK")
             else:
                 stock_sheet.append_row([
-                    st.session_state.shelf_label,
+                    selected_shelf,
                     selected_wid,
-                    counted_qty,
+                    1,
                     available_qty,
-                    brand,
+                    "",
                     timestamp,
                     "OK"
                 ])
-                st.success(f"✅ Added new entry for {selected_wid} with count: {counted_qty}")
+            st.success(f"✅ WID {selected_wid} saved successfully.")
+        else:
+            st.error("❌ Selected WID not found in Raw data.")
+    else:
+        st.warning("⚠️ Please select a WID from the dropdown.")
