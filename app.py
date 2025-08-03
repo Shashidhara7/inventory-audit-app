@@ -73,14 +73,14 @@ def log_daily_summary():
     stock_df = get_stock_data()
     today = datetime.now().strftime("%Y-%m-%d")
     daily_df = stock_df[
-        (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
+        (stock_df["CasperID"] == st.session_state.username) &
         (stock_df["Timestamp"].str.startswith(today))
     ]
     if daily_df.empty:
         st.warning("📭 No entries to summarize for today.")
         return
     summary_df = daily_df.groupby("Status").size().reset_index(name="Count")
-    summary_df.insert(0, "ShelfLabel", st.session_state.shelf_label)
+    summary_df.insert(0, "CasperID", st.session_state.username)
     summary_df.insert(0, "Date", today)
     try:
         report_sheet = sheet.worksheet("DailyReports")
