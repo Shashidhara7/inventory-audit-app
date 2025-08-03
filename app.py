@@ -44,7 +44,7 @@ st.session_state.setdefault("logged_in", False)
 st.session_state.setdefault("shelf_label", "")
 st.session_state.setdefault("validated_wids", [])
 st.session_state.setdefault("username", "")
-st.session_state.setdefault("show_registration", False) # Added default for registration tab visibility
+st.session_state.setdefault("show_registration", False)
 
 # 🔧 Helper Functions
 def get_login_data():
@@ -85,8 +85,8 @@ def process_misplaced_wid(wid):
         st.session_state.username
     ])
     st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}`.")
-    st.session_state.validated_wids.append(wid) # Add to validated list to avoid duplicates
-    st.experimental_rerun()
+    st.session_state.validated_wids.append(wid)
+    st.rerun() # <-- Corrected from st.experimental_rerun()
 
 
 def log_daily_summary():
@@ -241,7 +241,7 @@ else:
                             st.success("✅ New WID entry saved.")
                         
                         st.session_state.validated_wids.append(selected_wid)
-                        st.experimental_rerun()
+                        st.rerun() # <-- Corrected from st.experimental_rerun()
             else:
                 st.success("🎉 All WIDs under this Shelf Label have been validated.")
 
