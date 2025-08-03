@@ -1,4 +1,4 @@
-import streamlit as st 
+import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -44,43 +44,7 @@ st.session_state.setdefault("logged_in", False)
 st.session_state.setdefault("shelf_label", "")
 st.session_state.setdefault("validated_wids", [])
 st.session_state.setdefault("username", "")
-
-# ✅ Auto-scan WID Logic
-if "wid_scanned" not in st.session_state:
-    st.session_state.wid_scanned = False
-
-def process_wid_scan(wid):
-    raw_df = pd.DataFrame(raw_sheet.get_all_records())
-    stock_df = pd.DataFrame(stock_sheet.get_all_records())
-    shelf_label = st.session_state.shelf_label
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    available = raw_df[raw_df["WID"] == wid]
-    existing_row = stock_df[(stock_df["ShelfLabel"] == shelf_label) & (stock_df["WID"] == wid)]
-
-    if not existing_row.empty:
-        idx = existing_row.index[0] + 2
-        stock_sheet.update_cell(idx, 6, "MISPLACED")
-        stock_sheet.update_cell(idx, 4, 1)
-        stock_sheet.update_cell(idx, 7, timestamp)
-    else:
-        stock_sheet.append_row([
-            shelf_label,
-            wid,
-            "",
-            1,
-            "",
-            "MISPLACED",
-            timestamp,
-            st.session_state.username
-        ])
-
-scanned_wid = st.text_input("🔍 Scan WID", key="scanned_wid")
-if scanned_wid and not st.session_state.wid_scanned:
-    process_wid_scan(scanned_wid.strip())
-    st.session_state.wid_scanned = True
-    st.rerun()
-if st.session_state.wid_scanned:
-    st.session_state.wid_scanned = False
+st.session_state.setdefault("show_registration", False) # Added default for registration tab visibility
 
 # 🔧 Helper Functions
 def get_login_data():
@@ -90,10 +54,8 @@ def validate_login(username, password):
     df = get_login_data()
     if df.empty:
         return "deleted"
-
     username = username.strip().lower()
     password = password.strip()
-
     match = df[df["Username"].str.strip().str.lower() == username]
     if match.empty:
         return "deleted"
@@ -108,38 +70,50 @@ def get_raw_data():
 def get_stock_data():
     return pd.DataFrame(stock_sheet.get_all_records())
 
+def process_misplaced_wid(wid):
+    """Handles scanning of WIDs not expected on the shelf."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    shelf_label = st.session_state.shelf_label
+    stock_sheet.append_row([
+        shelf_label,
+        wid,
+        "",
+        1,
+        "",
+        "MISPLACED",
+        timestamp,
+        st.session_state.username
+    ])
+    st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}`.")
+    st.session_state.validated_wids.append(wid) # Add to validated list to avoid duplicates
+    st.experimental_rerun()
+
+
 def log_daily_summary():
     stock_df = get_stock_data()
-
     today = datetime.now().strftime("%Y-%m-%d")
     daily_df = stock_df[
         (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
         (stock_df["Timestamp"].str.startswith(today))
     ]
-
     if daily_df.empty:
         st.warning("📭 No entries to summarize for today.")
         return
-
     summary_df = daily_df.groupby("Status").size().reset_index(name="Count")
     summary_df.insert(0, "ShelfLabel", st.session_state.shelf_label)
     summary_df.insert(0, "Date", today)
-
     try:
         report_sheet = sheet.worksheet("DailyReports")
     except gspread.WorksheetNotFound:
         report_sheet = sheet.add_worksheet(title="DailyReports", rows=1000, cols=10)
-
     for _, row in summary_df.iterrows():
         report_sheet.append_row(row.tolist())
-
     st.success("📝 Daily summary saved to DailyReports sheet.")
 
 # 🔐 LOGIN PAGE
 if not st.session_state.logged_in:
     st.title("🔐 Login Page")
     tabs = st.tabs(["Login", "Register"])
-
     with tabs[0]:
         username = st.text_input("Username", key="login_user")
         password = st.text_input("Password", type="password", key="login_pass")
@@ -155,9 +129,8 @@ if not st.session_state.logged_in:
             elif login_status == "deleted":
                 st.warning("⚠️ Account not found. Please register below.")
                 st.session_state.show_registration = True
-
     with tabs[1]:
-        if st.session_state.get("show_registration", True):
+        if st.session_state.show_registration:
             new_username = st.text_input("New Username", key="reg_user")
             new_password = st.text_input("New Password", type="password", key="reg_pass")
             if st.button("Register"):
@@ -177,7 +150,6 @@ if not st.session_state.logged_in:
                     st.rerun()
         else:
             st.info("✅ You can now login with your new credentials.")
-
 
 # 📦 MAIN APP
 else:
@@ -203,13 +175,24 @@ else:
             st.session_state.validated_wids = []
             st.rerun()
 
+        # Load data for the current shelf
         raw_df = get_raw_data()
         shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
+
+        # WID Scan for MISPLACED Items
+        st.subheader("Scan Misplaced WIDs")
+        st.info("Use this box for items that are on the shelf but not in the list below.")
+        scanned_misplaced_wid = st.text_input("🔍 Scan a WID (for misplaced items)", key="misplaced_scan")
+        if scanned_misplaced_wid:
+            process_misplaced_wid(scanned_misplaced_wid.strip())
 
         if shelf_df.empty:
             st.warning("⚠️ No data found for this Shelf Label.")
         else:
+            st.subheader("Count Expected WIDs")
+            st.info("Select a WID from the list to count items expected on this shelf.")
             remaining_wids = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"].tolist()
+            
             if remaining_wids:
                 selected_wid = st.selectbox("🔽 Select WID to Validate", options=remaining_wids)
                 if selected_wid:
@@ -222,12 +205,11 @@ else:
                     - **Available Qty**: `{row['Quantity']}`
                     """)
                     counted = st.number_input("Enter Counted Quantity", min_value=0, step=1)
-
                     if st.button("✅ Save This WID"):
                         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         available = int(row["Quantity"])
                         status = "Short" if counted < available else "Excess" if counted > available else "OK"
-
+                        
                         stock_df = get_stock_data()
                         if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
                             existing = stock_df[
@@ -237,7 +219,7 @@ else:
                         else:
                             st.error("🛑 'ShelfLabel' or 'WID' column not found in stock_df. Please check your data source.")
                             existing = pd.DataFrame()
-
+                        
                         if not existing.empty:
                             row_index = existing.index[0] + 2
                             stock_sheet.update_cell(row_index, 3, vertical)
@@ -257,14 +239,15 @@ else:
                                 st.session_state.username
                             ])
                             st.success("✅ New WID entry saved.")
-
+                        
                         st.session_state.validated_wids.append(selected_wid)
-                        st.rerun()
+                        st.experimental_rerun()
             else:
                 st.success("🎉 All WIDs under this Shelf Label have been validated.")
 
-    if st.button("🔄 Reset Validated WID List"):
-        if st.session_state.shelf_label and st.button("📤 Save Daily Summary"):
+        st.markdown("---")
+        if st.button("🔄 Reset Validated WID List"):
+            st.session_state.validated_wids = []
+            st.rerun()
+        if st.button("📤 Save Daily Summary"):
             log_daily_summary()
-        st.session_state.validated_wids = []
-        st.rerun()
