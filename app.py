@@ -82,25 +82,41 @@ def process_misplaced_wid():
         
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     shelf_label = st.session_state.shelf_label
-    
-    if wid in st.session_state.validated_wids:
-        st.warning(f"⚠️ WID `{wid}` has already been processed.")
-        clear_misplaced_input()
-        return
 
-    stock_sheet.append_row([
-        shelf_label,
-        wid,
-        "",
-        1,
-        "",
-        "MISPLACED",
-        timestamp,
-        st.session_state.username
-    ])
-    st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}`.")
+    stock_df = get_stock_data()
+    
+    # Check if a 'MISPLACED' entry for this WID on this shelf already exists
+    existing_entry = stock_df[
+        (stock_df["ShelfLabel"].astype(str).str.strip() == str(shelf_label).strip()) &
+        (stock_df["WID"].astype(str).str.strip() == str(wid).strip()) &
+        (stock_df["Status"] == "MISPLACED")
+    ]
+
+    if not existing_entry.empty:
+        # If an entry exists, increment the count
+        row_index = existing_entry.index[0] + 2
+        current_count = int(existing_entry["CountedQty"].iloc[0])
+        new_count = current_count + 1
+        stock_sheet.update_cell(row_index, 4, new_count)
+        st.success(f"✅ WID `{wid}` already marked as MISPLACED. Count updated to {new_count}.")
+    else:
+        # If no entry exists, append a new row
+        stock_sheet.append_row([
+            shelf_label,
+            wid,
+            "",
+            1,
+            "",
+            "MISPLACED",
+            timestamp,
+            st.session_state.username
+        ])
+        st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}`.")
+
+    # The WID is now processed, so add it to the validated list to prevent it from showing in the dropdown
     st.session_state.validated_wids.append(wid)
     clear_misplaced_input()
+
 
 def save_summary_report():
     """Generates and saves a detailed summary report to a new worksheet."""
