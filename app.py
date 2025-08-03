@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
@@ -45,6 +45,43 @@ st.session_state.setdefault("shelf_label", "")
 st.session_state.setdefault("validated_wids", [])
 st.session_state.setdefault("username", "")
 
+# ✅ Auto-scan WID Logic
+if "wid_scanned" not in st.session_state:
+    st.session_state.wid_scanned = False
+
+def process_wid_scan(wid):
+    raw_df = pd.DataFrame(raw_sheet.get_all_records())
+    stock_df = pd.DataFrame(stock_sheet.get_all_records())
+    shelf_label = st.session_state.shelf_label
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    available = raw_df[raw_df["WID"] == wid]
+    existing_row = stock_df[(stock_df["ShelfLabel"] == shelf_label) & (stock_df["WID"] == wid)]
+
+    if not existing_row.empty:
+        idx = existing_row.index[0] + 2
+        stock_sheet.update_cell(idx, 6, "MISPLACED")
+        stock_sheet.update_cell(idx, 4, 1)
+        stock_sheet.update_cell(idx, 7, timestamp)
+    else:
+        stock_sheet.append_row([
+            shelf_label,
+            wid,
+            "",
+            1,
+            "",
+            "MISPLACED",
+            timestamp,
+            st.session_state.username
+        ])
+
+scanned_wid = st.text_input("🔍 Scan WID", key="scanned_wid")
+if scanned_wid and not st.session_state.wid_scanned:
+    process_wid_scan(scanned_wid.strip())
+    st.session_state.wid_scanned = True
+    st.rerun()
+if st.session_state.wid_scanned:
+    st.session_state.wid_scanned = False
+
 # 🔧 Helper Functions
 def get_login_data():
     return pd.DataFrame(login_sheet.get_all_records())
@@ -74,7 +111,6 @@ def get_stock_data():
 def log_daily_summary():
     stock_df = get_stock_data()
 
-    # Filter today's data for the active ShelfLabel
     today = datetime.now().strftime("%Y-%m-%d")
     daily_df = stock_df[
         (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
@@ -85,12 +121,10 @@ def log_daily_summary():
         st.warning("📭 No entries to summarize for today.")
         return
 
-    # Create summary: Status count
     summary_df = daily_df.groupby("Status").size().reset_index(name="Count")
     summary_df.insert(0, "ShelfLabel", st.session_state.shelf_label)
     summary_df.insert(0, "Date", today)
 
-    # Append to DailyReports sheet
     try:
         report_sheet = sheet.worksheet("DailyReports")
     except gspread.WorksheetNotFound:
