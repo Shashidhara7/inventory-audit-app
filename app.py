@@ -102,27 +102,53 @@ def process_misplaced_wid():
     st.session_state.validated_wids.append(wid)
     clear_misplaced_input()
 
-
-def log_daily_summary():
-    stock_df = get_stock_data()
-    today = datetime.now().strftime("%Y-%m-%d")
-    daily_df = stock_df[
-        (stock_df["ShelfLabel"] == st.session_state.shelf_label) &
-        (stock_df["Timestamp"].str.startswith(today))
-    ]
-    if daily_df.empty:
-        st.warning("📭 No entries to summarize for today.")
-        return
-    summary_df = daily_df.groupby("Status").size().reset_index(name="Count")
-    summary_df.insert(0, "ShelfLabel", st.session_state.shelf_label)
-    summary_df.insert(0, "Date", today)
+def save_summary_report():
+    """Generates and saves a detailed summary report to a new worksheet."""
     try:
-        report_sheet = sheet.worksheet("DailyReports")
+        report_sheet = sheet.worksheet("SummaryReport")
     except gspread.WorksheetNotFound:
-        report_sheet = sheet.add_worksheet(title="DailyReports", rows=1000, cols=10)
-    for _, row in summary_df.iterrows():
-        report_sheet.append_row(row.tolist())
-    st.success("📝 Daily summary saved to DailyReports sheet.")
+        report_sheet = sheet.add_worksheet(title="SummaryReport", rows=1000, cols=10)
+    
+    report_sheet.clear()
+
+    stock_df = get_stock_data()
+    if stock_df.empty:
+        st.warning("No data to save.")
+        return
+
+    user_stock_df = stock_df[stock_df["CasperID"] == st.session_state.username].copy()
+    if user_stock_df.empty:
+        st.warning("No data to save for your user account.")
+        return
+
+    user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date
+    
+    # 1. Generate and save the summary table
+    summary_table = user_stock_df.groupby(["Date", "CasperID", "Status"]).size().reset_index(name="Count")
+    summary_data = [["Daily Status Summary"]]
+    summary_data.extend([summary_table.columns.tolist()])
+    summary_data.extend(summary_table.values.tolist())
+    report_sheet.append_rows(summary_data)
+
+    # 2. Generate and save the detailed discrepancies table
+    discrepancy_table = user_stock_df[user_stock_df["Status"] != "OK"]
+    if not discrepancy_table.empty:
+        discrepancy_table = discrepancy_table[[
+            "ShelfLabel",
+            "WID",
+            "AvailableQty",
+            "CountedQty",
+            "CasperID",
+            "Date"
+        ]].rename(columns={"AvailableQty": "Available Qty", "CountedQty": "Counted Qty", "CasperID": "Username"})
+        
+        discrepancy_data = [[]]
+        discrepancy_data.extend([["Detailed Discrepancies"]])
+        discrepancy_data.extend([discrepancy_table.columns.tolist()])
+        discrepancy_data.extend(discrepancy_table.values.tolist())
+        report_sheet.append_rows(discrepancy_data)
+
+    st.success("✅ Summary report successfully saved to the 'SummaryReport' worksheet!")
 
 # 🔐 LOGIN PAGE
 if not st.session_state.logged_in:
@@ -266,8 +292,8 @@ else:
             if st.button("🔄 Reset Validated WID List"):
                 st.session_state.validated_wids = []
                 st.rerun()
-            if st.button("📤 Save Daily Summary"):
-                log_daily_summary()
+            if st.button("📤 Save Summary Report"): # Changed button text
+                save_summary_report()
 
     elif page == "Summary":
         st.title("📊 Inventory Count Summary")
@@ -278,28 +304,24 @@ else:
         if stock_df.empty:
             st.info("No stock count data available yet.")
         else:
-            # Filter data for the current user
             user_stock_df = stock_df[stock_df["CasperID"] == st.session_state.username].copy()
             user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date
             
             if user_stock_df.empty:
                 st.info("You have not recorded any counts yet.")
             else:
-                # Summary Header Table (Date, CasperID, Status, Count)
                 st.subheader("Daily Status Summary")
                 summary_table = user_stock_df.groupby(["Date", "CasperID", "Status"]).size().reset_index(name="Count")
                 st.dataframe(summary_table, use_container_width=True)
                 
                 st.markdown("---")
                 
-                # Detailed Table (Except Status 'OK')
                 st.subheader("Detailed Discrepancies")
                 discrepancy_table = user_stock_df[user_stock_df["Status"] != "OK"]
                 
                 if discrepancy_table.empty:
                     st.info("All items you have counted are 'OK'!")
                 else:
-                    # Select and rename columns for clarity
                     discrepancy_table = discrepancy_table[[
                         "ShelfLabel",
                         "WID",
@@ -309,3 +331,7 @@ else:
                         "Date"
                     ]].rename(columns={"AvailableQty": "Available Qty", "CountedQty": "Counted Qty", "CasperID": "Username"})
                     st.dataframe(discrepancy_table, use_container_width=True)
+
+        st.markdown("---")
+        if st.button("📤 Save Summary Report"):
+            save_summary_report()
