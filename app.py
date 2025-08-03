@@ -83,7 +83,6 @@ def process_misplaced_wid():
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     shelf_label = st.session_state.shelf_label
     
-    # Check if the WID has already been validated in this session
     if wid in st.session_state.validated_wids:
         st.warning(f"⚠️ WID `{wid}` has already been processed.")
         clear_misplaced_input()
@@ -168,8 +167,8 @@ if not st.session_state.logged_in:
 
 # 📦 MAIN APP
 else:
-    st.title("📦 Inventory Stock Count App")
     st.sidebar.success(f"👋 Logged in as `{st.session_state.username}`")
+    page = st.sidebar.radio("Navigation", ["Stock Count", "Summary"])
     if st.sidebar.button("🚪 Logout"):
         st.session_state.logged_in = False
         st.session_state.username = ""
@@ -177,98 +176,136 @@ else:
         st.session_state.validated_wids = []
         st.rerun()
 
-    if not st.session_state.shelf_label:
-        shelf_input = st.text_input("Scan or Enter Shelf Label")
-        if shelf_input:
-            st.session_state.shelf_label = shelf_input
-            st.success(f"Shelf Label set: {shelf_input}")
-            st.rerun()
-    else:
-        st.info(f"📌 Active Shelf Label: `{st.session_state.shelf_label}`")
-        if st.button("🔁 Change Shelf Label"):
-            st.session_state.shelf_label = ""
-            st.session_state.validated_wids = []
-            st.rerun()
-
-        # Load data for the current shelf
-        raw_df = get_raw_data()
-        shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
-
-        # WID Scan for MISPLACED Items
-        st.subheader("Scan Misplaced WIDs")
-        st.info("Use this box for items that are on the shelf but not in the list below.")
-        
-        # Use a callback to trigger processing only when the input changes
-        st.text_input(
-            "🔍 Scan a WID (for misplaced items)",
-            key="scanned_misplaced_wid",
-            on_change=process_misplaced_wid
-        )
-
-        if shelf_df.empty:
-            st.warning("⚠️ No data found for this Shelf Label.")
+    if page == "Stock Count":
+        st.title("📦 Inventory Stock Count App")
+        if not st.session_state.shelf_label:
+            shelf_input = st.text_input("Scan or Enter Shelf Label")
+            if shelf_input:
+                st.session_state.shelf_label = shelf_input
+                st.success(f"Shelf Label set: {shelf_input}")
+                st.rerun()
         else:
-            st.subheader("Count Expected WIDs")
-            st.info("Select a WID from the list to count items expected on this shelf.")
-            remaining_wids = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"].tolist()
-            
-            if remaining_wids:
-                selected_wid = st.selectbox("🔽 Select WID to Validate", options=remaining_wids, key="wid_selector")
-                
-                if selected_wid:
-                    row = shelf_df[shelf_df["WID"] == selected_wid].iloc[0]
-                    vertical = row.get("Vertical", "")
-                    st.markdown(f"""
-                    ### 🔍 WID Details
-                    - **Brand**: `{row['Brand']}`
-                    - **Vertical**: `{vertical}`
-                    - **Available Qty**: `{row['Quantity']}`
-                    """)
-                    counted = st.number_input("Enter Counted Quantity", min_value=0, step=1, key="counted_qty")
-                    
-                    if st.button("✅ Save This WID"):
-                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        available = int(row["Quantity"])
-                        status = "Short" if counted < available else "Excess" if counted > available else "OK"
-                        
-                        stock_df = get_stock_data()
-                        if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
-                            existing = stock_df[
-                                (stock_df["ShelfLabel"].astype(str).str.strip() == str(st.session_state.shelf_label).strip()) &
-                                (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
-                            ]
-                        else:
-                            st.error("🛑 'ShelfLabel' or 'WID' column not found in stock_df. Please check your data source.")
-                            existing = pd.DataFrame()
-                        
-                        if not existing.empty:
-                            row_index = existing.index[0] + 2
-                            stock_sheet.update_cell(row_index, 3, vertical)
-                            stock_sheet.update_cell(row_index, 4, counted)
-                            stock_sheet.update_cell(row_index, 6, status)
-                            stock_sheet.update_cell(row_index, 7, timestamp)
-                            st.success("✅ Updated existing entry.")
-                        else:
-                            stock_sheet.append_row([
-                                st.session_state.shelf_label,
-                                selected_wid,
-                                vertical,
-                                counted,
-                                available,
-                                status,
-                                timestamp,
-                                st.session_state.username
-                            ])
-                            st.success("✅ New WID entry saved.")
-                        
-                        st.session_state.validated_wids.append(selected_wid)
-                        st.rerun() # Rerun to remove the validated WID from the dropdown list.
-            else:
-                st.success("🎉 All WIDs under this Shelf Label have been validated.")
+            st.info(f"📌 Active Shelf Label: `{st.session_state.shelf_label}`")
+            if st.button("🔁 Change Shelf Label"):
+                st.session_state.shelf_label = ""
+                st.session_state.validated_wids = []
+                st.rerun()
 
+            raw_df = get_raw_data()
+            shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
+
+            st.subheader("Scan Misplaced WIDs")
+            st.info("Use this box for items that are on the shelf but not in the list below.")
+            st.text_input(
+                "🔍 Scan a WID (for misplaced items)",
+                key="scanned_misplaced_wid",
+                on_change=process_misplaced_wid
+            )
+
+            if shelf_df.empty:
+                st.warning("⚠️ No data found for this Shelf Label.")
+            else:
+                st.subheader("Count Expected WIDs")
+                st.info("Select a WID from the list to count items expected on this shelf.")
+                remaining_wids = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"].tolist()
+                
+                if remaining_wids:
+                    selected_wid = st.selectbox("🔽 Select WID to Validate", options=remaining_wids, key="wid_selector")
+                    if selected_wid:
+                        row = shelf_df[shelf_df["WID"] == selected_wid].iloc[0]
+                        vertical = row.get("Vertical", "")
+                        st.markdown(f"""
+                        ### 🔍 WID Details
+                        - **Brand**: `{row['Brand']}`
+                        - **Vertical**: `{vertical}`
+                        - **Available Qty**: `{row['Quantity']}`
+                        """)
+                        counted = st.number_input("Enter Counted Quantity", min_value=0, step=1, key="counted_qty")
+                        
+                        if st.button("✅ Save This WID"):
+                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            available = int(row["Quantity"])
+                            status = "Short" if counted < available else "Excess" if counted > available else "OK"
+                            
+                            stock_df = get_stock_data()
+                            if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
+                                existing = stock_df[
+                                    (stock_df["ShelfLabel"].astype(str).str.strip() == str(st.session_state.shelf_label).strip()) &
+                                    (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
+                                ]
+                            else:
+                                st.error("🛑 'ShelfLabel' or 'WID' column not found in stock_df. Please check your data source.")
+                                existing = pd.DataFrame()
+                            
+                            if not existing.empty:
+                                row_index = existing.index[0] + 2
+                                stock_sheet.update_cell(row_index, 3, vertical)
+                                stock_sheet.update_cell(row_index, 4, counted)
+                                stock_sheet.update_cell(row_index, 6, status)
+                                stock_sheet.update_cell(row_index, 7, timestamp)
+                                st.success("✅ Updated existing entry.")
+                            else:
+                                stock_sheet.append_row([
+                                    st.session_state.shelf_label,
+                                    selected_wid,
+                                    vertical,
+                                    counted,
+                                    available,
+                                    status,
+                                    timestamp,
+                                    st.session_state.username
+                                ])
+                                st.success("✅ New WID entry saved.")
+                            
+                            st.session_state.validated_wids.append(selected_wid)
+                            st.rerun()
+                else:
+                    st.success("🎉 All WIDs under this Shelf Label have been validated.")
+
+            st.markdown("---")
+            if st.button("🔄 Reset Validated WID List"):
+                st.session_state.validated_wids = []
+                st.rerun()
+            if st.button("📤 Save Daily Summary"):
+                log_daily_summary()
+
+    elif page == "Summary":
+        st.title("📊 Inventory Count Summary")
         st.markdown("---")
-        if st.button("🔄 Reset Validated WID List"):
-            st.session_state.validated_wids = []
-            st.rerun()
-        if st.button("📤 Save Daily Summary"):
-            log_daily_summary()
+        
+        stock_df = get_stock_data()
+        
+        if stock_df.empty:
+            st.info("No stock count data available yet.")
+        else:
+            # Filter data for the current user
+            user_stock_df = stock_df[stock_df["CasperID"] == st.session_state.username].copy()
+            user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date
+            
+            if user_stock_df.empty:
+                st.info("You have not recorded any counts yet.")
+            else:
+                # Summary Header Table (Date, CasperID, Status, Count)
+                st.subheader("Daily Status Summary")
+                summary_table = user_stock_df.groupby(["Date", "CasperID", "Status"]).size().reset_index(name="Count")
+                st.dataframe(summary_table, use_container_width=True)
+                
+                st.markdown("---")
+                
+                # Detailed Table (Except Status 'OK')
+                st.subheader("Detailed Discrepancies")
+                discrepancy_table = user_stock_df[user_stock_df["Status"] != "OK"]
+                
+                if discrepancy_table.empty:
+                    st.info("All items you have counted are 'OK'!")
+                else:
+                    # Select and rename columns for clarity
+                    discrepancy_table = discrepancy_table[[
+                        "ShelfLabel",
+                        "WID",
+                        "AvailableQty",
+                        "CountedQty",
+                        "CasperID",
+                        "Date"
+                    ]].rename(columns={"AvailableQty": "Available Qty", "CountedQty": "Counted Qty", "CasperID": "Username"})
+                    st.dataframe(discrepancy_table, use_container_width=True)
