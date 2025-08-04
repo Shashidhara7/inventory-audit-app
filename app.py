@@ -46,13 +46,14 @@ st.session_state.setdefault("validated_wids", [])
 st.session_state.setdefault("username", "")
 st.session_state.setdefault("show_registration", False)
 st.session_state.setdefault("scanned_misplaced_wid", "")
+st.session_state.setdefault("misplaced_wid_to_count", "") # New state variable
 
 # 🔧 Helper Functions with Caching
-@st.cache_data(ttl=3600)  # Cache for 1 hour, rarely changes
+@st.cache_data(ttl=3600)
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
 
-@st.cache_data(ttl=300) # Cache for 5 minutes to keep it relatively fresh
+@st.cache_data(ttl=300)
 def get_stock_data():
     return pd.DataFrame(stock_sheet.get_all_records())
 
@@ -77,12 +78,19 @@ def validate_login(username, password):
 def clear_misplaced_input():
     st.session_state.scanned_misplaced_wid = ""
 
-def process_misplaced_wid():
-    """Handles scanning of WIDs not expected on the shelf."""
+# New function to handle the WID scan event
+def handle_misplaced_scan():
     wid = st.session_state.scanned_misplaced_wid.strip()
-    if not wid:
+    if wid:
+        st.session_state.misplaced_wid_to_count = wid
+
+# New function to handle saving the misplaced WID count
+def save_misplaced_wid_count(counted_qty):
+    wid = st.session_state.misplaced_wid_to_count
+    if not wid or counted_qty < 0:
+        st.warning("Please enter a valid quantity.")
         return
-        
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     shelf_label = st.session_state.shelf_label
 
@@ -96,76 +104,29 @@ def process_misplaced_wid():
 
     if not existing_entry.empty:
         row_index = existing_entry.index[0] + 2
-        current_count = int(existing_entry["CountedQty"].iloc[0])
-        new_count = current_count + 1
-        stock_sheet.update_cell(row_index, 4, new_count)
+        stock_sheet.update_cell(row_index, 4, counted_qty)
         stock_sheet.update_cell(row_index, 7, timestamp)
         stock_sheet.update_cell(row_index, 8, st.session_state.username)
-        st.success(f"✅ WID `{wid}` already marked as MISPLACED. Count updated to {new_count}.")
+        st.success(f"✅ WID `{wid}` already marked as MISPLACED. Count updated to {counted_qty}.")
     else:
         stock_sheet.append_row([
             shelf_label,
             wid,
             "",
-            1,
+            counted_qty,
             "",
             "MISPLACED",
             timestamp,
             st.session_state.username
         ])
-        st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}`.")
+        st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}` with count {counted_qty}.")
     
     get_stock_data.clear()
 
+    # Clear the temporary state variable and the input box
     st.session_state.validated_wids.append(wid)
-    clear_misplaced_input()
-
-
-def save_summary_report():
-    """Generates and saves a detailed summary report to a new worksheet."""
-    try:
-        report_sheet = sheet.worksheet("SummaryReport")
-    except gspread.WorksheetNotFound:
-        report_sheet = sheet.add_worksheet(title="SummaryReport", rows=1000, cols=10)
-    
-    report_sheet.clear()
-
-    stock_df = get_stock_data()
-    if stock_df.empty:
-        st.warning("No data to save.")
-        return
-
-    user_stock_df = stock_df[stock_df["CasperID"] == st.session_state.username].copy()
-    if user_stock_df.empty:
-        st.warning("No data to save for your user account.")
-        return
-
-    user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
-    
-    summary_table = user_stock_df.groupby(["Date", "CasperID", "Status"]).size().reset_index(name="Count")
-    summary_data = [["Daily Status Summary"]]
-    summary_data.extend([summary_table.columns.tolist()])
-    summary_data.extend(summary_table.values.tolist())
-    report_sheet.append_rows(summary_data)
-
-    discrepancy_table = user_stock_df[user_stock_df["Status"] != "OK"]
-    if not discrepancy_table.empty:
-        discrepancy_table = discrepancy_table[[
-            "ShelfLabel",
-            "WID",
-            "AvailableQty",
-            "CountedQty",
-            "CasperID",
-            "Date"
-        ]].rename(columns={"AvailableQty": "Available Qty", "CountedQty": "Counted Qty", "CasperID": "Username"})
-        
-        discrepancy_data = [[]]
-        discrepancy_data.extend([["Detailed Discrepancies"]])
-        discrepancy_data.extend([discrepancy_table.columns.tolist()])
-        discrepancy_data.extend(discrepancy_table.values.tolist())
-        report_sheet.append_rows(discrepancy_data)
-
-    st.success("✅ Summary report successfully saved to the 'SummaryReport' worksheet!")
+    st.session_state.misplaced_wid_to_count = ""
+    st.session_state.scanned_misplaced_wid = ""
 
 # 🔐 LOGIN PAGE
 if not st.session_state.logged_in:
@@ -218,6 +179,7 @@ else:
         st.session_state.username = ""
         st.session_state.shelf_label = ""
         st.session_state.validated_wids = []
+        st.session_state.misplaced_wid_to_count = ""
         st.rerun()
 
     if page == "Stock Count":
@@ -233,6 +195,7 @@ else:
             if st.button("🔁 Change Shelf Label"):
                 st.session_state.shelf_label = ""
                 st.session_state.validated_wids = []
+                st.session_state.misplaced_wid_to_count = ""
                 st.rerun()
 
             raw_df = get_raw_data()
@@ -262,8 +225,21 @@ else:
             st.text_input(
                 "🔍 Scan a WID (for misplaced items)",
                 key="scanned_misplaced_wid",
-                on_change=process_misplaced_wid
+                on_change=handle_misplaced_scan,
             )
+
+            # Conditional UI for entering the misplaced WID quantity
+            if st.session_state.misplaced_wid_to_count:
+                st.write(f"WID `{st.session_state.misplaced_wid_to_count}` scanned as misplaced.")
+                misplaced_count = st.number_input(
+                    "Enter Counted Quantity for Misplaced WID",
+                    min_value=0,
+                    step=1,
+                    key="misplaced_qty_input"
+                )
+                if st.button("✅ Save Misplaced WID Count"):
+                    save_misplaced_wid_count(misplaced_count)
+                    st.rerun()
 
             if shelf_df.empty:
                 st.warning("⚠️ No data found for this Shelf Label.")
@@ -284,7 +260,6 @@ else:
                         - **Available Qty**: `{row['Quantity']}`
                         """)
                         
-                        # Corrected logic: user must enter a value > -1 to see the button
                         counted = st.number_input("Enter Counted Quantity", min_value=-1, step=1, key="counted_qty")
                         
                         if counted > -1:
