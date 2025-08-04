@@ -308,7 +308,7 @@ else:
             st.subheader("Scan Misplaced WIDs")
             st.info("Use this box for items that are on the shelf but not in the list below.")
             st.text_input(
-                "🔍 Scan a WID (for misplaced items)",
+                "🔍 Scan/Enter a WID",
                 key="scanned_misplaced_wid",
                 on_change=handle_misplaced_scan,
             )
@@ -321,7 +321,7 @@ else:
                     step=1,
                     key="misplaced_qty_input"
                 )
-                if st.button("✅ Save Misplaced WID Count"):
+                if st.button("✅ Save WID Count"):
                     save_misplaced_wid_count(misplaced_count)
             
             if shelf_df.empty:
