@@ -4,25 +4,6 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import pandas as pd
 
-# 🌄 Supply Chain Theme Background
-st.markdown("""
-    <style>
-    .stApp {
-        background-image: url("https://images.unsplash.com/photo-1581092160611-1c67e48ea8f3?auto=format&fit=crop&w=1400&q=80");
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-    }
-    .stButton>button, .stTextInput>div>div>input {
-        background-color: #005f73;
-        color: white;
-        border-radius: 8px;
-        font-weight: bold;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # 🗂️ Google Sheets Auth
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
@@ -47,8 +28,12 @@ st.session_state.setdefault("username", "")
 st.session_state.setdefault("show_registration", False)
 st.session_state.setdefault("scanned_misplaced_wid", "")
 st.session_state.setdefault("misplaced_wid_to_count", "")
+# Use session state for data frames to avoid re-reading on every rerun
+st.session_state.setdefault("raw_data_df", None)
+st.session_state.setdefault("stock_data_df", None)
+st.session_state.setdefault("login_data_df", None)
 
-# 🔧 Helper Functions with Caching
+# REVISED Caching Functions to read only once at app startup
 @st.cache_data(ttl=3600)
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
@@ -61,8 +46,17 @@ def get_stock_data():
 def get_login_data():
     return pd.DataFrame(login_sheet.get_all_records())
 
+# Load data into session state at the beginning
+if st.session_state.raw_data_df is None:
+    st.session_state.raw_data_df = get_raw_data()
+if st.session_state.stock_data_df is None:
+    st.session_state.stock_data_df = get_stock_data()
+if st.session_state.login_data_df is None:
+    st.session_state.login_data_df = get_login_data()
+
+# REVISED Helper Functions to use session state data frames
 def validate_login(username, password):
-    df = get_login_data()
+    df = st.session_state.login_data_df
     if df.empty:
         return "deleted"
     username = username.strip().lower()
@@ -92,7 +86,8 @@ def save_misplaced_wid_count(counted_qty):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     shelf_label = st.session_state.shelf_label
 
-    stock_df = get_stock_data()
+    # REVISED: Use session state dataframe for checking
+    stock_df = st.session_state.stock_data_df
     
     existing_entry = stock_df[
         (stock_df["ShelfLabel"].astype(str).str.strip() == str(shelf_label).strip()) &
@@ -101,13 +96,20 @@ def save_misplaced_wid_count(counted_qty):
     ]
 
     if not existing_entry.empty:
-        row_index = existing_entry.index[0] + 2
-        stock_sheet.update_cell(row_index, 4, counted_qty)
-        stock_sheet.update_cell(row_index, 7, timestamp)
-        stock_sheet.update_cell(row_index, 8, st.session_state.username)
+        # NEW: update the session state dataframe first
+        row_index_df = existing_entry.index[0]
+        st.session_state.stock_data_df.loc[row_index_df, "CountedQty"] = counted_qty
+        st.session_state.stock_data_df.loc[row_index_df, "Timestamp"] = timestamp
+        st.session_state.stock_data_df.loc[row_index_df, "CasperID"] = st.session_state.username
+
+        # NEW: Write back to Google Sheet
+        row_index_sheet = row_index_df + 2
+        stock_sheet.update_cell(row_index_sheet, 4, counted_qty)
+        stock_sheet.update_cell(row_index_sheet, 7, timestamp)
+        stock_sheet.update_cell(row_index_sheet, 8, st.session_state.username)
         st.success(f"✅ WID `{wid}` already marked as MISPLACED. Count updated to {counted_qty}.")
     else:
-        stock_sheet.append_row([
+        new_row = [
             shelf_label,
             wid,
             "",
@@ -116,11 +118,14 @@ def save_misplaced_wid_count(counted_qty):
             "MISPLACED",
             timestamp,
             st.session_state.username
-        ])
+        ]
+        # NEW: update session state dataframe first
+        st.session_state.stock_data_df.loc[len(st.session_state.stock_data_df)] = new_row
+        
+        # NEW: Write back to Google Sheet
+        stock_sheet.append_row(new_row)
         st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}` with count {counted_qty}.")
     
-    get_stock_data.clear()
-
     st.session_state.misplaced_wid_to_count = ""
     st.session_state.validated_wids.append(wid)
     st.rerun()
@@ -134,7 +139,8 @@ def save_summary_report():
     
     report_sheet.clear()
 
-    stock_df = get_stock_data()
+    # REVISED: Use session state dataframe
+    stock_df = st.session_state.stock_data_df
     if stock_df.empty:
         st.warning("No data to save.")
         return
@@ -205,18 +211,20 @@ if not st.session_state.logged_in:
             new_username = st.text_input("New Username", key="reg_user")
             new_password = st.text_input("New Password", type="password", key="reg_pass")
             if st.button("Register"):
-                df = get_login_data()
+                df = st.session_state.login_data_df
                 if "Username" in df.columns and new_username.strip().lower() in df["Username"].astype(str).str.strip().str.lower().values:
                     st.warning("⚠️ Username already exists. Try a different one.")
                 else:
                     now = datetime.now()
-                    login_sheet.append_row([
+                    new_row = [
                         now.strftime("%Y-%m-%d"),
                         new_username.strip(),
                         new_password.strip(),
                         now.strftime("%H:%M:%S")
-                    ])
-                    get_login_data.clear()
+                    ]
+                    # NEW: update session state dataframe and write to sheet
+                    st.session_state.login_data_df.loc[len(st.session_state.login_data_df)] = new_row
+                    login_sheet.append_row(new_row)
                     st.success("✅ Registered successfully! Please login.")
                     st.session_state.show_registration = False
                     st.rerun()
@@ -250,9 +258,10 @@ else:
                 st.session_state.validated_wids = []
                 st.session_state.misplaced_wid_to_count = ""
                 st.rerun()
-
-            raw_df = get_raw_data()
-            stock_df = get_stock_data()
+            
+            # REVISED: Use session state data frames
+            raw_df = st.session_state.raw_data_df
+            stock_df = st.session_state.stock_data_df
             shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
 
             total_wids = len(shelf_df["WID"].unique())
@@ -266,16 +275,12 @@ else:
             # --- Global Metrics Calculations ---
             total_unique_shelflabels = raw_df["ShelfLabel"].nunique()
             
-            # Find all WIDs per shelf from raw data
             raw_wids_per_shelf = raw_df.groupby('ShelfLabel')['WID'].nunique()
-            # Find all WIDs that have been counted
             audited_wids_per_shelf = stock_df.groupby('ShelfLabel')['WID'].nunique() if not stock_df.empty else pd.Series(dtype=float)
             
-            # Merge the two series to find incomplete shelves
             all_shelves_df = pd.merge(raw_wids_per_shelf, audited_wids_per_shelf, on='ShelfLabel', how='left', suffixes=('_raw', '_audited'))
             all_shelves_df['WID_audited'] = all_shelves_df['WID_audited'].fillna(0)
             
-            # A shelf is incomplete if the number of audited WIDs is less than the number of raw WIDs
             remaining_locations_global = len(all_shelves_df[all_shelves_df['WID_audited'] < all_shelves_df['WID_raw']])
 
             # --- Primary Dashboard Metrics ---
@@ -353,7 +358,8 @@ else:
                                 else:
                                     color = "green"
                                 
-                                stock_df = get_stock_data()
+                                # REVISED: Use session state dataframe for logic
+                                stock_df = st.session_state.stock_data_df
                                 
                                 if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
                                     existing = stock_df[
@@ -365,15 +371,26 @@ else:
                                     existing = pd.DataFrame()
                                 
                                 if not existing.empty:
-                                    row_index = existing.index[0] + 2
-                                    stock_sheet.update_cell(row_index, 3, vertical)
-                                    stock_sheet.update_cell(row_index, 4, counted)
-                                    stock_sheet.update_cell(row_index, 6, status)
-                                    stock_sheet.update_cell(row_index, 7, timestamp)
-                                    stock_sheet.update_cell(row_index, 8, st.session_state.username)
+                                    row_index_df = existing.index[0]
+                                    
+                                    # NEW: update session state dataframe
+                                    st.session_state.stock_data_df.loc[row_index_df, "Vertical"] = vertical
+                                    st.session_state.stock_data_df.loc[row_index_df, "CountedQty"] = counted
+                                    st.session_state.stock_data_df.loc[row_index_df, "Status"] = status
+                                    st.session_state.stock_data_df.loc[row_index_df, "Timestamp"] = timestamp
+                                    st.session_state.stock_data_df.loc[row_index_df, "CasperID"] = st.session_state.username
+
+                                    # NEW: Write back to Google Sheet
+                                    row_index_sheet = row_index_df + 2
+                                    stock_sheet.update_cell(row_index_sheet, 3, vertical)
+                                    stock_sheet.update_cell(row_index_sheet, 4, counted)
+                                    stock_sheet.update_cell(row_index_sheet, 6, status)
+                                    stock_sheet.update_cell(row_index_sheet, 7, timestamp)
+                                    stock_sheet.update_cell(row_index_sheet, 8, st.session_state.username)
+
                                     st.success("✅ Updated existing entry.")
                                 else:
-                                    stock_sheet.append_row([
+                                    new_row = [
                                         st.session_state.shelf_label,
                                         selected_wid,
                                         vertical,
@@ -382,10 +399,14 @@ else:
                                         status,
                                         timestamp,
                                         st.session_state.username
-                                    ])
+                                    ]
+                                    # NEW: update session state dataframe
+                                    st.session_state.stock_data_df.loc[len(st.session_state.stock_data_df)] = new_row
+                                    
+                                    # NEW: Write back to Google Sheet
+                                    stock_sheet.append_row(new_row)
                                     st.success("✅ New WID entry saved.")
                                 
-                                get_stock_data.clear()
                                 st.markdown(f'<p style="font-size:24px; color:{color};">Status: {status}</p>', unsafe_allow_html=True)
                                 st.session_state.validated_wids.append(selected_wid)
                                 st.rerun()
@@ -403,7 +424,7 @@ else:
         st.title("📊 Inventory Count Summary")
         st.markdown("---")
         
-        stock_df = get_stock_data()
+        stock_df = st.session_state.stock_data_df
         
         if stock_df.empty:
             st.info("No stock count data available yet.")
