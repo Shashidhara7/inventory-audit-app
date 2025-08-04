@@ -8,7 +8,7 @@ import pandas as pd
 st.markdown("""
     <style>
     .stApp {
-        background-image: url("https://drive.google.com/file/d/1tU8NP2QLI0Kn4thN07z8fTo1A6RoJI8O/view?usp=sharing");
+        background-image: url("https://images.unsplash.com/photo-1581092160611-1c67e48ea8f3?auto=format&fit=crop&w=1400&q=80");
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
@@ -187,13 +187,11 @@ if not st.session_state.logged_in:
                 st.warning("⚠️ Account not found. Please register below.")
                 st.session_state.show_registration = True
     with tabs[1]:
-        # This conditional is corrected to prevent UnboundLocalError
         if st.session_state.show_registration:
             new_username = st.text_input("New Username", key="reg_user")
             new_password = st.text_input("New Password", type="password", key="reg_pass")
             if st.button("Register"):
                 df = get_login_data()
-                # Check for column existence and value
                 if "Username" in df.columns and new_username.strip().lower() in df["Username"].astype(str).str.strip().str.lower().values:
                     st.warning("⚠️ Username already exists. Try a different one.")
                 else:
@@ -204,7 +202,7 @@ if not st.session_state.logged_in:
                         new_password.strip(),
                         now.strftime("%H:%M:%S")
                     ])
-                    get_login_data.clear() # Clear cache after writing new data
+                    get_login_data.clear()
                     st.success("✅ Registered successfully! Please login.")
                     st.session_state.show_registration = False
                     st.rerun()
@@ -285,48 +283,51 @@ else:
                         - **Vertical**: `{vertical}`
                         - **Available Qty**: `{row['Quantity']}`
                         """)
-                        counted = st.number_input("Enter Counted Quantity", min_value=0, step=1, key="counted_qty")
                         
-                        if st.button("✅ Save This WID"):
-                            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            available = int(row["Quantity"])
-                            status = "Short" if counted < available else "Excess" if counted > available else "OK"
-                            
-                            stock_df = get_stock_data()
-                            if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
-                                existing = stock_df[
-                                    (stock_df["ShelfLabel"].astype(str).str.strip() == str(st.session_state.shelf_label).strip()) &
-                                    (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
-                                ]
-                            else:
-                                st.error("🛑 'ShelfLabel' or 'WID' column not found in stock_df. Please check your data source.")
-                                existing = pd.DataFrame()
-                            
-                            if not existing.empty:
-                                row_index = existing.index[0] + 2
-                                stock_sheet.update_cell(row_index, 3, vertical)
-                                stock_sheet.update_cell(row_index, 4, counted)
-                                stock_sheet.update_cell(row_index, 6, status)
-                                stock_sheet.update_cell(row_index, 7, timestamp)
-                                stock_sheet.update_cell(row_index, 8, st.session_state.username)
-                                st.success("✅ Updated existing entry.")
-                            else:
-                                stock_sheet.append_row([
-                                    st.session_state.shelf_label,
-                                    selected_wid,
-                                    vertical,
-                                    counted,
-                                    available,
-                                    status,
-                                    timestamp,
-                                    st.session_state.username
-                                ])
-                                st.success("✅ New WID entry saved.")
-                            
-                            get_stock_data.clear()
-
-                            st.session_state.validated_wids.append(selected_wid)
-                            st.rerun()
+                        # Corrected logic: user must enter a value > -1 to see the button
+                        counted = st.number_input("Enter Counted Quantity", min_value=-1, step=1, key="counted_qty")
+                        
+                        if counted > -1:
+                            if st.button("✅ Save This WID"):
+                                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                available = int(row["Quantity"])
+                                status = "Short" if counted < available else "Excess" if counted > available else "OK"
+                                
+                                stock_df = get_stock_data()
+                                
+                                if "ShelfLabel" in stock_df.columns and "WID" in stock_df.columns:
+                                    existing = stock_df[
+                                        (stock_df["ShelfLabel"].astype(str).str.strip() == str(st.session_state.shelf_label).strip()) &
+                                        (stock_df["WID"].astype(str).str.strip() == str(selected_wid).strip())
+                                    ]
+                                else:
+                                    st.error("🛑 'ShelfLabel' or 'WID' column not found in stock_df. Please check your data source.")
+                                    existing = pd.DataFrame()
+                                
+                                if not existing.empty:
+                                    row_index = existing.index[0] + 2
+                                    stock_sheet.update_cell(row_index, 3, vertical)
+                                    stock_sheet.update_cell(row_index, 4, counted)
+                                    stock_sheet.update_cell(row_index, 6, status)
+                                    stock_sheet.update_cell(row_index, 7, timestamp)
+                                    stock_sheet.update_cell(row_index, 8, st.session_state.username)
+                                    st.success("✅ Updated existing entry.")
+                                else:
+                                    stock_sheet.append_row([
+                                        st.session_state.shelf_label,
+                                        selected_wid,
+                                        vertical,
+                                        counted,
+                                        available,
+                                        status,
+                                        timestamp,
+                                        st.session_state.username
+                                    ])
+                                    st.success("✅ New WID entry saved.")
+                                
+                                get_stock_data.clear()
+                                st.session_state.validated_wids.append(selected_wid)
+                                st.rerun()
                 else:
                     st.success("🎉 All WIDs under this Shelf Label have been validated.")
 
