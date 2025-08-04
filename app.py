@@ -8,7 +8,7 @@ import pandas as pd
 st.markdown("""
     <style>
     .stApp {
-        background-image: url("https://images.unsplash.com/photo-1581092160611-1c67e48ea8f3?auto=format&fit=crop&w=1400&q=80");
+        background-image: url("https://drive.google.com/file/d/1tU8NP2QLI0Kn4thN07z8fTo1A6RoJI8O/view?usp=sharing");
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
