@@ -237,6 +237,28 @@ else:
             raw_df = get_raw_data()
             shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
 
+            # --- Display the metrics at the top ---
+            total_wids = len(shelf_df["WID"].unique())
+            remaining_wids = len(shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"])
+
+            # Calculate total and remaining line items
+            total_line_items = shelf_df["Quantity"].sum()
+            remaining_line_items_df = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]
+            remaining_line_items = remaining_line_items_df["Quantity"].sum()
+
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Unique WIDs", total_wids)
+            with col2:
+                st.metric("Remaining WIDs", remaining_wids)
+            with col3:
+                st.metric("Total Line Items", total_line_items)
+            with col4:
+                st.metric("Remaining Line Items", remaining_line_items)
+
+            st.markdown("---")
+            # --- End of metrics section ---
+
             st.subheader("Scan Misplaced WIDs")
             st.info("Use this box for items that are on the shelf but not in the list below.")
             st.text_input(
@@ -250,10 +272,10 @@ else:
             else:
                 st.subheader("Count Expected WIDs")
                 st.info("Select a WID from the list to count items expected on this shelf.")
-                remaining_wids = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"].tolist()
+                remaining_wids_list = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"].tolist()
                 
-                if remaining_wids:
-                    selected_wid = st.selectbox("🔽 Select WID to Validate", options=remaining_wids, key="wid_selector")
+                if remaining_wids_list:
+                    selected_wid = st.selectbox("🔽 Select WID to Validate", options=remaining_wids_list, key="wid_selector")
                     if selected_wid:
                         row = shelf_df[shelf_df["WID"] == selected_wid].iloc[0]
                         vertical = row.get("Vertical", "")
