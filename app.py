@@ -152,10 +152,11 @@ def save_summary_report():
 
     user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
 
-    ok_count = user_stock_df[user_stock_df['Status'] == 'OK']['CountedQty'].sum()
-    misplaced_count = user_stock_df[user_stock_df['Status'] == 'MISPLACED']['CountedQty'].sum()
-    short_count = (user_stock_df[user_stock_df['Status'] == 'Short']['AvailableQty'] - user_stock_df[user_stock_df['Status'] == 'Short']['CountedQty']).sum()
-    excess_count = (user_stock_df[user_stock_df['Status'] == 'Excess']['CountedQty'] - user_stock_df[user_stock_df['Status'] == 'Excess']['AvailableQty']).sum()
+    # REVISED: Change from sum() to len() to get line item count
+    ok_count = len(user_stock_df[user_stock_df['Status'] == 'OK'])
+    misplaced_count = len(user_stock_df[user_stock_df['Status'] == 'MISPLACED'])
+    short_count = len(user_stock_df[user_stock_df['Status'] == 'Short'])
+    excess_count = len(user_stock_df[user_stock_df['Status'] == 'Excess'])
 
     summary_data = {
         'Status': ['OK', 'Misplaced', 'Short', 'Excess'],
@@ -436,10 +437,11 @@ else:
             else:
                 st.subheader("Daily Status Summary (Line Item Count)")
                 
-                ok_count = user_stock_df[user_stock_df['Status'] == 'OK']['CountedQty'].sum()
-                misplaced_count = user_stock_df[user_stock_df['Status'] == 'MISPLACED']['CountedQty'].sum()
-                short_count = (user_stock_df[user_stock_df['Status'] == 'Short']['AvailableQty'] - user_stock_df[user_stock_df['Status'] == 'Short']['CountedQty']).sum()
-                excess_count = (user_stock_df[user_stock_df['Status'] == 'Excess']['CountedQty'] - user_stock_df[user_stock_df['Status'] == 'Excess']['AvailableQty']).sum()
+                # Updated to count the number of rows instead of summing the quantities
+                ok_count = len(user_stock_df[user_stock_df['Status'] == 'OK'])
+                misplaced_count = len(user_stock_df[user_stock_df['Status'] == 'MISPLACED'])
+                short_count = len(user_stock_df[user_stock_df['Status'] == 'Short'])
+                excess_count = len(user_stock_df[user_stock_df['Status'] == 'Excess'])
 
                 summary_data = {
                     'Status': ['OK', 'Misplaced', 'Short', 'Excess'],
