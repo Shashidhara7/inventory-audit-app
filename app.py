@@ -46,7 +46,7 @@ st.session_state.setdefault("validated_wids", [])
 st.session_state.setdefault("username", "")
 st.session_state.setdefault("show_registration", False)
 st.session_state.setdefault("scanned_misplaced_wid", "")
-st.session_state.setdefault("misplaced_wid_to_count", "") # New state variable
+st.session_state.setdefault("misplaced_wid_to_count", "")
 
 # 🔧 Helper Functions with Caching
 @st.cache_data(ttl=3600)
@@ -78,13 +78,11 @@ def validate_login(username, password):
 def clear_misplaced_input():
     st.session_state.scanned_misplaced_wid = ""
 
-# New function to handle the WID scan event
 def handle_misplaced_scan():
     wid = st.session_state.scanned_misplaced_wid.strip()
     if wid:
         st.session_state.misplaced_wid_to_count = wid
 
-# New function to handle saving the misplaced WID count
 def save_misplaced_wid_count(counted_qty):
     wid = st.session_state.misplaced_wid_to_count
     if not wid or counted_qty < 0:
@@ -123,10 +121,12 @@ def save_misplaced_wid_count(counted_qty):
     
     get_stock_data.clear()
 
-    # Clear the temporary state variable and the input box
-    st.session_state.validated_wids.append(wid)
+    # Clear the temporary state variable to hide the misplaced input UI
     st.session_state.misplaced_wid_to_count = ""
-    st.session_state.scanned_misplaced_wid = ""
+    # The problematic line is removed: st.session_state.scanned_misplaced_wid = ""
+
+    st.session_state.validated_wids.append(wid)
+    st.rerun()
 
 # 🔐 LOGIN PAGE
 if not st.session_state.logged_in:
@@ -226,9 +226,9 @@ else:
                 "🔍 Scan a WID (for misplaced items)",
                 key="scanned_misplaced_wid",
                 on_change=handle_misplaced_scan,
+                # value is not set here
             )
 
-            # Conditional UI for entering the misplaced WID quantity
             if st.session_state.misplaced_wid_to_count:
                 st.write(f"WID `{st.session_state.misplaced_wid_to_count}` scanned as misplaced.")
                 misplaced_count = st.number_input(
@@ -239,8 +239,7 @@ else:
                 )
                 if st.button("✅ Save Misplaced WID Count"):
                     save_misplaced_wid_count(misplaced_count)
-                    st.rerun()
-
+            
             if shelf_df.empty:
                 st.warning("⚠️ No data found for this Shelf Label.")
             else:
