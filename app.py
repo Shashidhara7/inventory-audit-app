@@ -252,30 +252,50 @@ else:
                 st.rerun()
 
             raw_df = get_raw_data()
+            stock_df = get_stock_data()
             shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
 
             total_wids = len(shelf_df["WID"].unique())
             remaining_wids = len(shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"])
-            
-            # New global metric calculation
-            total_unique_shelflabels = raw_df["ShelfLabel"].nunique()
 
-            # Progress calculation
             if total_wids > 0:
                 progress_percentage = (1 - (remaining_wids / total_wids)) * 100
             else:
                 progress_percentage = 0
             
-            # Redesigned metric display
-            col1, col2, col3, col4 = st.columns(4)
+            # --- Global Metrics Calculations ---
+            total_unique_shelflabels = raw_df["ShelfLabel"].nunique()
+            
+            # Find all WIDs per shelf from raw data
+            raw_wids_per_shelf = raw_df.groupby('ShelfLabel')['WID'].nunique()
+            # Find all WIDs that have been counted
+            audited_wids_per_shelf = stock_df.groupby('ShelfLabel')['WID'].nunique() if not stock_df.empty else pd.Series(dtype=float)
+            
+            # Merge the two series to find incomplete shelves
+            all_shelves_df = pd.merge(raw_wids_per_shelf, audited_wids_per_shelf, on='ShelfLabel', how='left', suffixes=('_raw', '_audited'))
+            all_shelves_df['WID_audited'] = all_shelves_df['WID_audited'].fillna(0)
+            
+            # A shelf is incomplete if the number of audited WIDs is less than the number of raw WIDs
+            remaining_locations_global = len(all_shelves_df[all_shelves_df['WID_audited'] < all_shelves_df['WID_raw']])
+
+            # --- Primary Dashboard Metrics ---
+            col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Total WIDs (Shelf)", total_wids)
             with col2:
                 st.metric("Remaining WIDs (Shelf)", remaining_wids)
             with col3:
-                st.metric("Total Locations (Global)", total_unique_shelflabels)
-            with col4:
                 st.metric("Progress (Shelf)", f"{progress_percentage:.0f}%")
+
+            st.markdown("---")
+            
+            # --- Global Audit Overview ---
+            st.subheader("Global Audit Overview")
+            col_global_1, col_global_2 = st.columns(2)
+            with col_global_1:
+                st.metric("Total Locations (Global)", total_unique_shelflabels)
+            with col_global_2:
+                st.metric("Remaining Locations (Global)", remaining_locations_global)
 
             st.markdown("---")
 
