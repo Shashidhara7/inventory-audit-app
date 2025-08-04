@@ -4,16 +4,26 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import pandas as pd
 
+# --- NEW: Get Google Sheet name from Streamlit secrets ---
+# This allows for separate deployments with unique sheet names.
+# Default to "InventoryStockApp" if not set.
+google_sheet_name = st.secrets.get("GOOGLE_SHEET_NAME", "InventoryStockApp")
+
 # 🗂️ Google Sheets Auth
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(st.secrets["GOOGLE_CREDS"], scopes=scope)
 client = gspread.authorize(creds)
 
 # 🔗 Sheet References
-sheet = client.open("InventoryStockApp")
-raw_sheet = sheet.worksheet("Raw")
-stock_sheet = sheet.worksheet("StockCountDetails")
-login_sheet = sheet.worksheet("LoginDetails")
+try:
+    sheet = client.open(google_sheet_name)
+    raw_sheet = sheet.worksheet("Raw")
+    stock_sheet = sheet.worksheet("StockCountDetails")
+    login_sheet = sheet.worksheet("LoginDetails")
+except gspread.exceptions.SpreadsheetNotFound:
+    st.error(f"Error: The Google Sheet '{google_sheet_name}' was not found. Please check the name and ensure the service account has access.")
+    st.stop()
+
 
 # 📋 Ensure Updated Headers
 expected_headers = ["ShelfLabel", "WID", "Vertical", "CountedQty", "AvailableQty", "Status", "Timestamp", "CasperID"]
@@ -152,7 +162,7 @@ def save_summary_report():
 
     user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
 
-    # REVISED: Change from sum() to len() to get line item count
+    # Updated to count the number of rows instead of summing the quantities
     ok_count = len(user_stock_df[user_stock_df['Status'] == 'OK'])
     misplaced_count = len(user_stock_df[user_stock_df['Status'] == 'MISPLACED'])
     short_count = len(user_stock_df[user_stock_df['Status'] == 'Short'])
@@ -265,14 +275,8 @@ else:
             stock_df = st.session_state.stock_data_df
             shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
 
-            total_wids = len(shelf_df["WID"].unique())
             remaining_wids = len(shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"])
 
-            if total_wids > 0:
-                progress_percentage = (1 - (remaining_wids / total_wids)) * 100
-            else:
-                progress_percentage = 0
-            
             # --- Global Metrics Calculations ---
             total_unique_shelflabels = raw_df["ShelfLabel"].nunique()
             
@@ -284,23 +288,13 @@ else:
             
             remaining_locations_global = len(all_shelves_df[all_shelves_df['WID_audited'] < all_shelves_df['WID_raw']])
 
-            # --- Primary Dashboard Metrics ---
+            # --- Displaying only the requested metrics ---
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Total WIDs (Shelf)", total_wids)
-            with col2:
                 st.metric("Remaining WIDs (Shelf)", remaining_wids)
-            with col3:
-                st.metric("Progress (Shelf)", f"{progress_percentage:.0f}%")
-
-            st.markdown("---")
-            
-            # --- Global Audit Overview ---
-            st.subheader("Global Audit Overview")
-            col_global_1, col_global_2 = st.columns(2)
-            with col_global_1:
+            with col2:
                 st.metric("Total Locations (Global)", total_unique_shelflabels)
-            with col_global_2:
+            with col3:
                 st.metric("Remaining Locations (Global)", remaining_locations_global)
 
             st.markdown("---")
@@ -308,7 +302,7 @@ else:
             st.subheader("Scan Misplaced WIDs")
             st.info("Use this box for items that are on the shelf but not in the list below.")
             st.text_input(
-                "🔍 Scan/Enter a WID",
+                "🔍 Scan a WID (for misplaced items)",
                 key="scanned_misplaced_wid",
                 on_change=handle_misplaced_scan,
             )
@@ -321,7 +315,7 @@ else:
                     step=1,
                     key="misplaced_qty_input"
                 )
-                if st.button("✅ Save WID Count"):
+                if st.button("✅ Save Misplaced WID Count"):
                     save_misplaced_wid_count(misplaced_count)
             
             if shelf_df.empty:
