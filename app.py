@@ -257,19 +257,16 @@ else:
             total_wids = len(shelf_df["WID"].unique())
             remaining_wids = len(shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"])
 
-            total_line_items = shelf_df["Quantity"].sum()
-            remaining_line_items_df = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]
-            remaining_line_items = remaining_line_items_df["Quantity"].sum()
-
+            # These two metrics have been updated as requested
             col1, col2, col3, col4 = st.columns(4)
             with col1:
                 st.metric("Total Unique WIDs", total_wids)
             with col2:
                 st.metric("Remaining WIDs", remaining_wids)
             with col3:
-                st.metric("Total Line Items", total_line_items)
+                st.metric("Total Unique Locations", total_wids)
             with col4:
-                st.metric("Remaining Line Items", remaining_line_items)
+                st.metric("Remaining Locations", remaining_wids)
 
             st.markdown("---")
 
