@@ -60,6 +60,20 @@ def get_stock_data():
 def get_login_data():
     return pd.DataFrame(login_sheet.get_all_records())
 
+def validate_login(username, password):
+    df = get_login_data()
+    if df.empty:
+        return "deleted"
+    username = username.strip().lower()
+    password = password.strip()
+    match = df[df["Username"].str.strip().str.lower() == username]
+    if match.empty:
+        return "deleted"
+    elif password == str(match.iloc[0]["Password"]).strip():
+        return "valid"
+    else:
+        return "invalid"
+
 def clear_misplaced_input():
     st.session_state.scanned_misplaced_wid = ""
 
@@ -101,7 +115,6 @@ def process_misplaced_wid():
         ])
         st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}`.")
     
-    # Invalidate the cache for stock data to force a refresh on the next rerun
     get_stock_data.clear()
 
     st.session_state.validated_wids.append(wid)
@@ -174,11 +187,13 @@ if not st.session_state.logged_in:
                 st.warning("⚠️ Account not found. Please register below.")
                 st.session_state.show_registration = True
     with tabs[1]:
+        # This conditional is corrected to prevent UnboundLocalError
         if st.session_state.show_registration:
             new_username = st.text_input("New Username", key="reg_user")
             new_password = st.text_input("New Password", type="password", key="reg_pass")
             if st.button("Register"):
                 df = get_login_data()
+                # Check for column existence and value
                 if "Username" in df.columns and new_username.strip().lower() in df["Username"].astype(str).str.strip().str.lower().values:
                     st.warning("⚠️ Username already exists. Try a different one.")
                 else:
@@ -189,6 +204,7 @@ if not st.session_state.logged_in:
                         new_password.strip(),
                         now.strftime("%H:%M:%S")
                     ])
+                    get_login_data.clear() # Clear cache after writing new data
                     st.success("✅ Registered successfully! Please login.")
                     st.session_state.show_registration = False
                     st.rerun()
@@ -221,7 +237,6 @@ else:
                 st.session_state.validated_wids = []
                 st.rerun()
 
-            # The get_raw_data call is now cached
             raw_df = get_raw_data()
             shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
 
@@ -308,7 +323,6 @@ else:
                                 ])
                                 st.success("✅ New WID entry saved.")
                             
-                            # Invalidate the cache for stock data
                             get_stock_data.clear()
 
                             st.session_state.validated_wids.append(selected_wid)
@@ -327,7 +341,6 @@ else:
         st.title("📊 Inventory Count Summary")
         st.markdown("---")
         
-        # The get_stock_data call is now cached
         stock_df = get_stock_data()
         
         if stock_df.empty:
