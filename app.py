@@ -47,29 +47,18 @@ st.session_state.setdefault("username", "")
 st.session_state.setdefault("show_registration", False)
 st.session_state.setdefault("scanned_misplaced_wid", "")
 
-# 🔧 Helper Functions
-def get_login_data():
-    return pd.DataFrame(login_sheet.get_all_records())
-
-def validate_login(username, password):
-    df = get_login_data()
-    if df.empty:
-        return "deleted"
-    username = username.strip().lower()
-    password = password.strip()
-    match = df[df["Username"].str.strip().str.lower() == username]
-    if match.empty:
-        return "deleted"
-    elif password == str(match.iloc[0]["Password"]).strip():
-        return "valid"
-    else:
-        return "invalid"
-
+# 🔧 Helper Functions with Caching
+@st.cache_data(ttl=3600)  # Cache for 1 hour, rarely changes
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
 
+@st.cache_data(ttl=300) # Cache for 5 minutes to keep it relatively fresh
 def get_stock_data():
     return pd.DataFrame(stock_sheet.get_all_records())
+
+@st.cache_data(ttl=3600)
+def get_login_data():
+    return pd.DataFrame(login_sheet.get_all_records())
 
 def clear_misplaced_input():
     st.session_state.scanned_misplaced_wid = ""
@@ -85,7 +74,6 @@ def process_misplaced_wid():
 
     stock_df = get_stock_data()
     
-    # Check if a 'MISPLACED' entry for this WID on this shelf already exists
     existing_entry = stock_df[
         (stock_df["ShelfLabel"].astype(str).str.strip() == str(shelf_label).strip()) &
         (stock_df["WID"].astype(str).str.strip() == str(wid).strip()) &
@@ -93,7 +81,6 @@ def process_misplaced_wid():
     ]
 
     if not existing_entry.empty:
-        # If an entry exists, increment the count and update username/timestamp
         row_index = existing_entry.index[0] + 2
         current_count = int(existing_entry["CountedQty"].iloc[0])
         new_count = current_count + 1
@@ -102,7 +89,6 @@ def process_misplaced_wid():
         stock_sheet.update_cell(row_index, 8, st.session_state.username)
         st.success(f"✅ WID `{wid}` already marked as MISPLACED. Count updated to {new_count}.")
     else:
-        # If no entry exists, append a new row
         stock_sheet.append_row([
             shelf_label,
             wid,
@@ -114,8 +100,10 @@ def process_misplaced_wid():
             st.session_state.username
         ])
         st.success(f"✅ WID `{wid}` marked as MISPLACED on shelf `{shelf_label}`.")
+    
+    # Invalidate the cache for stock data to force a refresh on the next rerun
+    get_stock_data.clear()
 
-    # The WID is now processed, so add it to the validated list to prevent it from showing in the dropdown
     st.session_state.validated_wids.append(wid)
     clear_misplaced_input()
 
@@ -139,17 +127,14 @@ def save_summary_report():
         st.warning("No data to save for your user account.")
         return
 
-    # Convert Timestamp to a formatted date string
     user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
     
-    # 1. Generate and save the summary table
     summary_table = user_stock_df.groupby(["Date", "CasperID", "Status"]).size().reset_index(name="Count")
     summary_data = [["Daily Status Summary"]]
     summary_data.extend([summary_table.columns.tolist()])
     summary_data.extend(summary_table.values.tolist())
     report_sheet.append_rows(summary_data)
 
-    # 2. Generate and save the detailed discrepancies table
     discrepancy_table = user_stock_df[user_stock_df["Status"] != "OK"]
     if not discrepancy_table.empty:
         discrepancy_table = discrepancy_table[[
@@ -236,14 +221,13 @@ else:
                 st.session_state.validated_wids = []
                 st.rerun()
 
+            # The get_raw_data call is now cached
             raw_df = get_raw_data()
             shelf_df = raw_df[raw_df["ShelfLabel"] == st.session_state.shelf_label]
 
-            # --- Display the metrics at the top ---
             total_wids = len(shelf_df["WID"].unique())
             remaining_wids = len(shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]["WID"])
 
-            # Calculate total and remaining line items
             total_line_items = shelf_df["Quantity"].sum()
             remaining_line_items_df = shelf_df[~shelf_df["WID"].isin(st.session_state.validated_wids)]
             remaining_line_items = remaining_line_items_df["Quantity"].sum()
@@ -259,7 +243,6 @@ else:
                 st.metric("Remaining Line Items", remaining_line_items)
 
             st.markdown("---")
-            # --- End of metrics section ---
 
             st.subheader("Scan Misplaced WIDs")
             st.info("Use this box for items that are on the shelf but not in the list below.")
@@ -325,6 +308,9 @@ else:
                                 ])
                                 st.success("✅ New WID entry saved.")
                             
+                            # Invalidate the cache for stock data
+                            get_stock_data.clear()
+
                             st.session_state.validated_wids.append(selected_wid)
                             st.rerun()
                 else:
@@ -341,6 +327,7 @@ else:
         st.title("📊 Inventory Count Summary")
         st.markdown("---")
         
+        # The get_stock_data call is now cached
         stock_df = get_stock_data()
         
         if stock_df.empty:
