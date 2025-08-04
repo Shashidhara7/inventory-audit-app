@@ -144,17 +144,13 @@ def save_summary_report():
         st.warning("No data to save for your user account.")
         return
 
-    # --- Start of new logic for line item count ---
-    # Prepare data for summary report
     user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
 
-    # Calculate counts for each status type
     ok_count = user_stock_df[user_stock_df['Status'] == 'OK']['CountedQty'].sum()
     misplaced_count = user_stock_df[user_stock_df['Status'] == 'MISPLACED']['CountedQty'].sum()
     short_count = (user_stock_df[user_stock_df['Status'] == 'Short']['AvailableQty'] - user_stock_df[user_stock_df['Status'] == 'Short']['CountedQty']).sum()
     excess_count = (user_stock_df[user_stock_df['Status'] == 'Excess']['CountedQty'] - user_stock_df[user_stock_df['Status'] == 'Excess']['AvailableQty']).sum()
 
-    # Create a summary DataFrame for the report
     summary_data = {
         'Status': ['OK', 'Misplaced', 'Short', 'Excess'],
         'Line Item Count': [ok_count, misplaced_count, short_count, excess_count]
@@ -165,7 +161,6 @@ def save_summary_report():
     summary_report_data.extend([summary_df.columns.tolist()])
     summary_report_data.extend(summary_df.values.tolist())
     report_sheet.append_rows(summary_report_data)
-    # --- End of new logic for line item count ---
 
     discrepancy_table = user_stock_df[user_stock_df["Status"] != "OK"]
     if not discrepancy_table.empty:
@@ -323,6 +318,14 @@ else:
                                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                 available = int(row["Quantity"])
                                 status = "Short" if counted < available else "Excess" if counted > available else "OK"
+
+                                color = ""
+                                if status == "Short":
+                                    color = "red"
+                                elif status == "Excess":
+                                    color = "orange"
+                                else:
+                                    color = "green"
                                 
                                 stock_df = get_stock_data()
                                 
@@ -357,6 +360,7 @@ else:
                                     st.success("✅ New WID entry saved.")
                                 
                                 get_stock_data.clear()
+                                st.markdown(f'<p style="font-size:24px; color:{color};">Status: {status}</p>', unsafe_allow_html=True)
                                 st.session_state.validated_wids.append(selected_wid)
                                 st.rerun()
                 else:
@@ -385,13 +389,11 @@ else:
             else:
                 st.subheader("Daily Status Summary (Line Item Count)")
                 
-                # Calculate counts for each status type
                 ok_count = user_stock_df[user_stock_df['Status'] == 'OK']['CountedQty'].sum()
                 misplaced_count = user_stock_df[user_stock_df['Status'] == 'MISPLACED']['CountedQty'].sum()
                 short_count = (user_stock_df[user_stock_df['Status'] == 'Short']['AvailableQty'] - user_stock_df[user_stock_df['Status'] == 'Short']['CountedQty']).sum()
                 excess_count = (user_stock_df[user_stock_df['Status'] == 'Excess']['CountedQty'] - user_stock_df[user_stock_df['Status'] == 'Excess']['AvailableQty']).sum()
 
-                # Create a summary DataFrame for display
                 summary_data = {
                     'Status': ['OK', 'Misplaced', 'Short', 'Excess'],
                     'Line Item Count': [ok_count, misplaced_count, short_count, excess_count]
