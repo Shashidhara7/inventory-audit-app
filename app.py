@@ -121,12 +121,70 @@ def save_misplaced_wid_count(counted_qty):
     
     get_stock_data.clear()
 
-    # Clear the temporary state variable to hide the misplaced input UI
     st.session_state.misplaced_wid_to_count = ""
-    # The problematic line is removed: st.session_state.scanned_misplaced_wid = ""
-
     st.session_state.validated_wids.append(wid)
     st.rerun()
+
+def save_summary_report():
+    """Generates and saves a detailed summary report to a new worksheet."""
+    try:
+        report_sheet = sheet.worksheet("SummaryReport")
+    except gspread.WorksheetNotFound:
+        report_sheet = sheet.add_worksheet(title="SummaryReport", rows=1000, cols=10)
+    
+    report_sheet.clear()
+
+    stock_df = get_stock_data()
+    if stock_df.empty:
+        st.warning("No data to save.")
+        return
+
+    user_stock_df = stock_df[stock_df["CasperID"] == st.session_state.username].copy()
+    if user_stock_df.empty:
+        st.warning("No data to save for your user account.")
+        return
+
+    # --- Start of new logic for line item count ---
+    # Prepare data for summary report
+    user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
+
+    # Calculate counts for each status type
+    ok_count = user_stock_df[user_stock_df['Status'] == 'OK']['CountedQty'].sum()
+    misplaced_count = user_stock_df[user_stock_df['Status'] == 'MISPLACED']['CountedQty'].sum()
+    short_count = (user_stock_df[user_stock_df['Status'] == 'Short']['AvailableQty'] - user_stock_df[user_stock_df['Status'] == 'Short']['CountedQty']).sum()
+    excess_count = (user_stock_df[user_stock_df['Status'] == 'Excess']['CountedQty'] - user_stock_df[user_stock_df['Status'] == 'Excess']['AvailableQty']).sum()
+
+    # Create a summary DataFrame for the report
+    summary_data = {
+        'Status': ['OK', 'Misplaced', 'Short', 'Excess'],
+        'Line Item Count': [ok_count, misplaced_count, short_count, excess_count]
+    }
+    summary_df = pd.DataFrame(summary_data)
+
+    summary_report_data = [["Daily Status Summary"]]
+    summary_report_data.extend([summary_df.columns.tolist()])
+    summary_report_data.extend(summary_df.values.tolist())
+    report_sheet.append_rows(summary_report_data)
+    # --- End of new logic for line item count ---
+
+    discrepancy_table = user_stock_df[user_stock_df["Status"] != "OK"]
+    if not discrepancy_table.empty:
+        discrepancy_table = discrepancy_table[[
+            "ShelfLabel",
+            "WID",
+            "AvailableQty",
+            "CountedQty",
+            "CasperID",
+            "Date"
+        ]].rename(columns={"AvailableQty": "Available Qty", "CountedQty": "Counted Qty", "CasperID": "Username"})
+        
+        discrepancy_data = [[]]
+        discrepancy_data.extend([["Detailed Discrepancies"]])
+        discrepancy_data.extend([discrepancy_table.columns.tolist()])
+        discrepancy_data.extend(discrepancy_table.values.tolist())
+        report_sheet.append_rows(discrepancy_data)
+
+    st.success("✅ Summary report successfully saved to the 'SummaryReport' worksheet!")
 
 # 🔐 LOGIN PAGE
 if not st.session_state.logged_in:
@@ -226,7 +284,6 @@ else:
                 "🔍 Scan a WID (for misplaced items)",
                 key="scanned_misplaced_wid",
                 on_change=handle_misplaced_scan,
-                # value is not set here
             )
 
             if st.session_state.misplaced_wid_to_count:
@@ -322,23 +379,35 @@ else:
             st.info("No stock count data available yet.")
         else:
             user_stock_df = stock_df[stock_df["CasperID"] == st.session_state.username].copy()
-            user_stock_df["Date"] = pd.to_datetime(user_stock_df["Timestamp"]).dt.date.astype(str)
             
             if user_stock_df.empty:
                 st.info("You have not recorded any counts yet.")
             else:
-                st.subheader("Daily Status Summary")
-                summary_table = user_stock_df.groupby(["Date", "CasperID", "Status"]).size().reset_index(name="Count")
-                st.dataframe(summary_table, use_container_width=True)
+                st.subheader("Daily Status Summary (Line Item Count)")
+                
+                # Calculate counts for each status type
+                ok_count = user_stock_df[user_stock_df['Status'] == 'OK']['CountedQty'].sum()
+                misplaced_count = user_stock_df[user_stock_df['Status'] == 'MISPLACED']['CountedQty'].sum()
+                short_count = (user_stock_df[user_stock_df['Status'] == 'Short']['AvailableQty'] - user_stock_df[user_stock_df['Status'] == 'Short']['CountedQty']).sum()
+                excess_count = (user_stock_df[user_stock_df['Status'] == 'Excess']['CountedQty'] - user_stock_df[user_stock_df['Status'] == 'Excess']['AvailableQty']).sum()
+
+                # Create a summary DataFrame for display
+                summary_data = {
+                    'Status': ['OK', 'Misplaced', 'Short', 'Excess'],
+                    'Line Item Count': [ok_count, misplaced_count, short_count, excess_count]
+                }
+                summary_df = pd.DataFrame(summary_data)
+                st.dataframe(summary_df, use_container_width=True)
                 
                 st.markdown("---")
                 
                 st.subheader("Detailed Discrepancies")
-                discrepancy_table = user_stock_df[user_stock_df["Status"] != "OK"]
+                discrepancy_table = user_stock_df[user_stock_df["Status"] != "OK"].copy()
                 
                 if discrepancy_table.empty:
                     st.info("All items you have counted are 'OK'!")
                 else:
+                    discrepancy_table["Date"] = pd.to_datetime(discrepancy_table["Timestamp"]).dt.date.astype(str)
                     discrepancy_table = discrepancy_table[[
                         "ShelfLabel",
                         "WID",
