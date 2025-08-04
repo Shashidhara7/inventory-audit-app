@@ -93,11 +93,13 @@ def process_misplaced_wid():
     ]
 
     if not existing_entry.empty:
-        # If an entry exists, increment the count
+        # If an entry exists, increment the count and update username/timestamp
         row_index = existing_entry.index[0] + 2
         current_count = int(existing_entry["CountedQty"].iloc[0])
         new_count = current_count + 1
         stock_sheet.update_cell(row_index, 4, new_count)
+        stock_sheet.update_cell(row_index, 7, timestamp)
+        stock_sheet.update_cell(row_index, 8, st.session_state.username)
         st.success(f"✅ WID `{wid}` already marked as MISPLACED. Count updated to {new_count}.")
     else:
         # If no entry exists, append a new row
@@ -308,6 +310,7 @@ else:
                                 stock_sheet.update_cell(row_index, 4, counted)
                                 stock_sheet.update_cell(row_index, 6, status)
                                 stock_sheet.update_cell(row_index, 7, timestamp)
+                                stock_sheet.update_cell(row_index, 8, st.session_state.username)
                                 st.success("✅ Updated existing entry.")
                             else:
                                 stock_sheet.append_row([
