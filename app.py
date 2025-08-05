@@ -38,21 +38,21 @@ st.session_state.setdefault("username", "")
 st.session_state.setdefault("show_registration", False)
 st.session_state.setdefault("scanned_misplaced_wid", "")
 st.session_state.setdefault("misplaced_wid_to_count", "")
-# Use session state for data frames to avoid re-reading on every rerun
 st.session_state.setdefault("raw_data_df", None)
 st.session_state.setdefault("stock_data_df", None)
 st.session_state.setdefault("login_data_df", None)
 
-# REVISED Caching Functions to read only once at app startup
-@st.cache_data(ttl=3600)
+# --- REVISED: Caching functions with optimal TTL values ---
+# This provides the auto-refresh functionality
+@st.cache_data(ttl=600)  # Refresh every 10 minutes
 def get_raw_data():
     return pd.DataFrame(raw_sheet.get_all_records())
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=30)  # Refresh every 30 seconds
 def get_stock_data():
     return pd.DataFrame(stock_sheet.get_all_records())
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=600)  # Refresh every 10 minutes
 def get_login_data():
     return pd.DataFrame(login_sheet.get_all_records())
 
@@ -63,6 +63,16 @@ if st.session_state.stock_data_df is None:
     st.session_state.stock_data_df = get_stock_data()
 if st.session_state.login_data_df is None:
     st.session_state.login_data_df = get_login_data()
+
+# --- NEW: Function to clear all relevant caches and session state dataframes ---
+# This is called by the manual refresh button
+def clear_all_caches_and_dataframes():
+    st.cache_data.clear()
+    st.session_state.raw_data_df = None
+    st.session_state.stock_data_df = None
+    st.session_state.login_data_df = None
+    st.success("✅ Cache cleared. Data will be re-fetched on next interaction.")
+    st.rerun()
 
 # REVISED Helper Functions to use session state data frames
 def validate_login(username, password):
@@ -246,6 +256,11 @@ if not st.session_state.logged_in:
 else:
     st.sidebar.success(f"👋 Logged in as `{st.session_state.username}`")
     page = st.sidebar.radio("Navigation", ["Stock Count", "Summary"])
+
+    # --- NEW: Refresh button to clear cache ---
+    if st.sidebar.button("🔄 Refresh Data"):
+        clear_all_caches_and_dataframes()
+
     if st.sidebar.button("🚪 Logout"):
         st.session_state.logged_in = False
         st.session_state.username = ""
